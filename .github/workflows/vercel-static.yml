@@ -1,0 +1,69 @@
+name: Build Vercel static site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Binaryen
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Build Tailscale networking WASM
+        run: |
+          GOOS=js GOARCH=wasm go build -trimpath -ldflags "-X tailscale.com/version.shortStamp=1.102.4 -X tailscale.com/version.longStamp=1.102.4-HeadscaleConsole-${GITHUB_SHA} -s -w" -o ./package/tailscale/pkg/tailscale.wasm ./package/tailscale/tailscale.go
+          wasm-opt --enable-bulk-memory --enable-sign-ext --enable-nontrapping-float-to-int -Oz ./package/tailscale/pkg/tailscale.wasm -o ./package/tailscale/pkg/tailscale.wasm
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" ./package/tailscale/pkg/wasm_exec.js
+
+      - name: Set up Rust and wasm-pack
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          curl --proto '=https' --tlsv1.2 -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build RDP WASM
+        working-directory: package/ironRdp
+        run: wasm-pack build --out-name ironrdp --target web
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install frontend dependencies
+        run: deno install
+
+      - name: Set app version
+        run: deno --allow-read="package.json" --allow-write="package.json" patch-version.js 0.0.0-unstable-${GITHUB_SHA::7}
+
+      - name: Write public Headscale config
+        env:
+          HEADSCALE_CONTROL_URL: ${{ vars.HEADSCALE_CONTROL_URL }}
+        run: node scripts/write-public-config.mjs
+
+      - name: Build frontend
+        run: deno task build
+
+      - name: Publish static files to Vercel branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: vercel-static
+          publish_dir: ./dist
+          force_orphan: true
+          disable_nojekyll: true
