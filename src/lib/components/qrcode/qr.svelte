@@ -12,7 +12,10 @@
     svg = new QrCode({
       background: "transparent",
       color: "currentcolor",
-      container: "svg-viewbox",
+      // SVGs with a viewBox but no explicit size default to 0×0 in browsers.
+      container: "svg",
+      width: 256,
+      height: 256,
       padding: 0,
       ...opt,
     }).svg();
