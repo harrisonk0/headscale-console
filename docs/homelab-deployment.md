@@ -20,8 +20,15 @@ at rest. Login is rate limited and accepted TOTP steps cannot be reused.
 
 The approval credential stays in a Worker secret. Sessions use Secure, HttpOnly,
 SameSite cookies and expire after 30 minutes. Vercel rewrites `/api/remote/*` to
-the Worker so console cookies are first party. Only the resulting Tailscale
-profile is kept in tab sessionStorage. No private values belong in public
+the Worker so console cookies are first party. The active Tailscale profile is kept in tab sessionStorage. A shared AES-GCM
+encrypted copy in localStorage allows reconnecting across tabs during the same
+30-minute authenticated login. Its random decryption key is available only from
+the authenticated session endpoint and is not persisted in browser storage.
+A Web Lock permits one active WASM client per browser origin. A new tab can
+explicitly take over: the prior page flushes encrypted state and unloads its
+client without logging out the ephemeral node. Closing and reopening also
+restores that identity while the web login remains valid. Logout erases the
+shared encrypted cache. No private values belong in public
 configuration or repository files.
 
 End session requests logout, which deletes an ephemeral node. If the tab is

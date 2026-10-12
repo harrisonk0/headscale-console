@@ -6,7 +6,13 @@
     onReady,
     setupToken = "",
     needsNode = true,
-  }: { onReady: (key: string) => void; setupToken?: string; needsNode?: boolean } = $props();
+    prepareSession,
+  }: {
+    onReady: (key: string) => void;
+    setupToken?: string;
+    needsNode?: boolean;
+    prepareSession?: () => Promise<boolean>;
+  } = $props();
   let password = $state(""),
     confirm = $state(""),
     code = $state(""),
@@ -33,7 +39,8 @@
     busy = true;
     error = "";
     try {
-      const b = needsNode ? await post("join", {}) : { authKey: "" };
+      const createNode = prepareSession ? await prepareSession() : needsNode;
+      const b = createNode ? await post("join", {}) : { authKey: "" };
       onReady(b.authKey);
     } catch (e) {
       error = e instanceof Error ? e.message : "Could not start the session.";

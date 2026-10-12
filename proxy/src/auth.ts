@@ -71,7 +71,14 @@ export class AuthError extends Error {
   }
 }
 type AuthRow = { salt: string; password_hash: string; seed: string; last_step: number };
-type SessionRow = { hash: string; kind: string; expires: number; parent: string; joins: number };
+type SessionRow = {
+  hash: string;
+  kind: string;
+  expires: number;
+  parent: string;
+  joins: number;
+  resume_key: string;
+};
 
 /** One coordinator per owner: atomic OTP consumption and bounded login attempts. */
 export class AuthGuard extends DurableObject<Env> {
@@ -84,6 +91,11 @@ export class AuthGuard extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS tickets(hash TEXT PRIMARY KEY,parent TEXT NOT NULL,expires INTEGER NOT NULL,target TEXT NOT NULL DEFAULT 'dashboard');
       CREATE TABLE IF NOT EXISTS recovery(hash TEXT PRIMARY KEY,used INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS limits(name TEXT PRIMARY KEY,count INTEGER NOT NULL,reset INTEGER NOT NULL);`);
+    const sessionColumns = ctx.storage.sql
+      .exec<{ name: string }>("PRAGMA table_info(sessions)")
+      .toArray();
+    if (!sessionColumns.some((c) => c.name === "resume_key"))
+      ctx.storage.sql.exec("ALTER TABLE sessions ADD COLUMN resume_key TEXT NOT NULL DEFAULT ''");
     const columns = ctx.storage.sql.exec<{ name: string }>("PRAGMA table_info(tickets)").toArray();
     if (!columns.some((c) => c.name === "target"))
       ctx.storage.sql.exec(
@@ -170,7 +182,20 @@ export class AuthGuard extends DurableObject<Env> {
     return row;
   }
   async status(token: string) {
-    return { configured: !!this.row(), authenticated: !!this.session(token, "remote") };
+    const session = this.session(token, "remote");
+    if (session && !session.resume_key) {
+      session.resume_key = random();
+      this.ctx.storage.sql.exec(
+        "UPDATE sessions SET resume_key=? WHERE hash=?",
+        session.resume_key,
+        session.hash,
+      );
+    }
+    return {
+      configured: !!this.row(),
+      authenticated: !!session,
+      ...(session ? { resumeKey: session.resume_key, expiresAt: session.expires } : {}),
+    };
   }
   async beginSetup(token: string) {
     this.requireBootstrap(token);

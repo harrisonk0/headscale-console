@@ -22,6 +22,9 @@ import "./mesh.css";
 import LoadingScreen from "./LoadingScreen.svelte";
 import NotFound from "./routes/404.svelte";
 import Critical from "./Critical.svelte";
+import { restoreBrowserIdentity } from "$lib/store/resume";
+import { claimBrowserSession } from "$lib/store/session-lease";
+import SessionInUse from "$lib/components/SessionInUse.svelte";
 import SessionStart from "$lib/components/SessionStart.svelte";
 
 declare global {
@@ -76,6 +79,35 @@ declare global {
   });
   const setupToken = new URLSearchParams(location.hash.split("?")[1] || "").get("setup") || "";
   if (setupToken) history.replaceState(null, "", location.pathname + "#/setup");
+  async function prepareSession() {
+    const r = await fetch("/api/remote/status", {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) throw new Error("Could not restore your browser session.");
+    const status = await r.json();
+    if (!status.authenticated || !status.resumeKey)
+      throw new Error("Sign in again to restore your session.");
+    await claimBrowserSession(
+      (move) =>
+        new Promise<void>((resolve) => {
+          const dialog = mount(SessionInUse, {
+            target: document.body,
+            props: {
+              takeOver: async () => {
+                await move();
+                await unmount(dialog);
+                resolve();
+              },
+            },
+          });
+        }),
+    );
+    await restoreBrowserIdentity(status.resumeKey, status.expiresAt);
+    Object.assign(window, { ipnProfiles: loadIpnProfiles() });
+    return !window.ipnProfiles.currentProfile;
+  }
   let authenticated = false;
   try {
     const r = await fetch("/api/remote/status", {
@@ -85,6 +117,7 @@ declare global {
     });
     if (r.ok) authenticated = (await r.json()).authenticated;
   } catch {}
+  if (authenticated) await prepareSession();
   let sessionAuthKey: string | undefined;
   if (setupToken || !authenticated || !window.ipnProfiles.currentProfile) {
     await unmount(loadingScreen!);
@@ -94,6 +127,7 @@ declare global {
         target: appEl,
         props: {
           setupToken,
+          prepareSession,
           needsNode: !window.ipnProfiles.currentProfile,
           onReady: async (key: string) => {
             await unmount(gate);
@@ -121,7 +155,9 @@ declare global {
       },
       routeAll: true,
       authKey: sessionAuthKey,
-      hostname: "mesh-browser-" + crypto.randomUUID().slice(0, 8),
+      hostname:
+        window.ipnProfiles.currentProfile?.Hostname ||
+        "mesh-browser-" + crypto.randomUUID().slice(0, 8),
       controlURL: cfg.controlUrl,
       advertiseTags: "",
     }),

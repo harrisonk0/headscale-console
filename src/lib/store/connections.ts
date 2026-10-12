@@ -1,3 +1,4 @@
+import { forgetBrowserIdentity } from "./resume";
 import { writable } from "svelte/store";
 export type Protocol = "ssh" | "vnc" | "rdp";
 export type Connection = {
@@ -33,6 +34,7 @@ export function connectionUrl(host = "", proto: Protocol = "ssh") {
   return `#/connect?${new URLSearchParams({ proto, ...(host ? { host } : {}) })}`;
 }
 export async function endSession() {
+  forgetBrowserIdentity();
   try {
     await Promise.allSettled([
       window.ipn.logout(),

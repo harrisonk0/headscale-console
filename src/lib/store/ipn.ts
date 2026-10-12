@@ -1,3 +1,5 @@
+import { cacheBrowserIdentity } from "./resume";
+
 import { get, writable } from "svelte/store";
 
 import type { Ipn } from "$package/tailscale/ipn.d";
@@ -19,6 +21,7 @@ netMap.subscribe(async (netMap) => {
 export class IpnStateStorage {
   public static setState(id: string, value: string) {
     window.sessionStorage[ipnStatePrefix + id] = value;
+    cacheBrowserIdentity();
   }
 
   public static getState(id: string): string {
@@ -53,9 +56,7 @@ export function loadIpnProfiles(): {
   }
 
   if (current && !profiles[current]) {
-    console.warn(
-      `Profile "${current}" is defined as currently selected but could not be found!`,
-    );
+    console.warn(`Profile "${current}" is defined as currently selected but could not be found!`);
     current = undefined;
   }
 
