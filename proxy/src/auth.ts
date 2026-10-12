@@ -81,9 +81,14 @@ export class AuthGuard extends DurableObject<Env> {
       .exec(`CREATE TABLE IF NOT EXISTS auth(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT NOT NULL,password_hash TEXT NOT NULL,seed TEXT NOT NULL,last_step INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY CHECK(id=1),seed TEXT NOT NULL,expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY,kind TEXT NOT NULL,expires INTEGER NOT NULL,parent TEXT NOT NULL,joins INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS tickets(hash TEXT PRIMARY KEY,parent TEXT NOT NULL,expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS tickets(hash TEXT PRIMARY KEY,parent TEXT NOT NULL,expires INTEGER NOT NULL,target TEXT NOT NULL DEFAULT 'dashboard');
       CREATE TABLE IF NOT EXISTS recovery(hash TEXT PRIMARY KEY,used INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS limits(name TEXT PRIMARY KEY,count INTEGER NOT NULL,reset INTEGER NOT NULL);`);
+    const columns = ctx.storage.sql.exec<{ name: string }>("PRAGMA table_info(tickets)").toArray();
+    if (!columns.some((c) => c.name === "target"))
+      ctx.storage.sql.exec(
+        "ALTER TABLE tickets ADD COLUMN target TEXT NOT NULL DEFAULT 'dashboard'",
+      );
   }
   private row() {
     return this.ctx.storage.sql
@@ -272,26 +277,43 @@ export class AuthGuard extends DurableObject<Env> {
     this.ctx.storage.sql.exec("UPDATE sessions SET joins=joins+1 WHERE hash=?", row.hash);
     return true;
   }
-  async ticket(token: string) {
+  async ticket(token: string, target = "dashboard") {
     const row = this.session(token, "remote");
     if (!row)
       throw new AuthError(401, "Your web login expired. Reload HK Remote to sign in again.");
     const ticket = random();
     this.ctx.storage.sql.exec("DELETE FROM tickets WHERE expires<?", Date.now());
     this.ctx.storage.sql.exec(
-      "INSERT INTO tickets(hash,parent,expires) VALUES(?,?,?)",
+      "INSERT INTO tickets(hash,parent,expires,target) VALUES(?,?,?,?)",
       digest(ticket),
       row.hash,
       Date.now() + 45000,
+      target,
     );
     return ticket;
   }
-  async redeem(ticket: string) {
+  async appTicket(token: string, port: number) {
+    if (port !== 80 && (!Number.isInteger(port) || port < 30000 || port > 30099))
+      throw new AuthError(400, "Invalid Umbrel app port.");
+    const row = this.session(token, "umbrel");
+    if (!row) throw new AuthError(401, "Open Umbrel again from HK Remote to renew access.");
+    const ticket = random();
+    this.ctx.storage.sql.exec("DELETE FROM tickets WHERE expires<?", Date.now());
+    this.ctx.storage.sql.exec(
+      "INSERT INTO tickets(hash,parent,expires,target) VALUES(?,?,?,?)",
+      digest(ticket),
+      row.parent,
+      Date.now() + 45000,
+      port === 80 ? "dashboard" : String(port),
+    );
+    return ticket;
+  }
+  async redeem(ticket: string, target = "dashboard") {
     const token = random();
     this.ctx.storage.transactionSync(() => {
       const row = this.ctx.storage.sql
-        .exec<{ parent: string; expires: number }>(
-          "SELECT parent,expires FROM tickets WHERE hash=?",
+        .exec<{ parent: string; expires: number; target: string }>(
+          "SELECT parent,expires,target FROM tickets WHERE hash=?",
           digest(ticket),
         )
         .toArray()[0];
@@ -300,7 +322,13 @@ export class AuthGuard extends DurableObject<Env> {
             .exec<{ expires: number }>("SELECT expires FROM sessions WHERE hash=?", row.parent)
             .toArray()[0]
         : undefined;
-      if (!row || row.expires <= Date.now() || !parent || parent.expires <= Date.now())
+      if (
+        !row ||
+        row.target !== target ||
+        row.expires <= Date.now() ||
+        !parent ||
+        parent.expires <= Date.now()
+      )
         throw new AuthError(401, "This Umbrel link expired. Open it again from HK Remote.");
       this.ctx.storage.sql.exec("DELETE FROM tickets WHERE hash=?", digest(ticket));
       this.ctx.storage.sql.exec(

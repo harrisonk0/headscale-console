@@ -104,6 +104,8 @@ declare global {
     });
     loadingScreen = mount(LoadingScreen, { target: appEl });
   }
+  if (/^#\/setup(?:\?|$)/i.test(location.hash))
+    history.replaceState(null, "", location.pathname + "#/");
   loadUserSettings(cfg.defaults);
 
   Object.assign(window, {

@@ -125,7 +125,9 @@ export default {
         }
         if (action === "umbrel-ticket") {
           const ticket = await auth.ticket(session);
-          return json({ url: `${url.origin}/__remote/umbrel-entry#ticket=${ticket}` });
+          return json({
+            url: `https://hk-remote-umbrel.harrisonk-0.workers.dev/__remote/umbrel-entry#ticket=${ticket}`,
+          });
         }
         if (action === "join") {
           await auth.reserveJoin(session);
@@ -186,6 +188,17 @@ export default {
               },
             },
           );
+        if (request.method === "GET" && url.pathname === "/") {
+          const ticket = await auth.appTicket(cookie(request, umbrelCookie), 80);
+          return new Response(null, {
+            status: 303,
+            headers: {
+              Location: `https://hk-remote-umbrel.harrisonk-0.workers.dev/__remote/umbrel-entry#ticket=${ticket}`,
+              "Cache-Control": "no-store",
+              "Referrer-Policy": "no-referrer",
+            },
+          });
+        }
         target = new URL("/__hkremote" + url.pathname + url.search, env.ORIGIN);
         upstreamHeaders.set("X-HKRemote-Bridge", env.UMBREL_BRIDGE_SECRET);
         const cookies = (request.headers.get("Cookie") || "")

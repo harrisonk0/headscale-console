@@ -65,10 +65,26 @@ separate cookie is bound to the console session. Caddy on the existing hk-cloud
 host forwards authenticated bridge requests to 100.64.0.6:80. The bridge secret
 is stored in a protected service environment file; unauthorized requests receive
 403. Umbrel renders normally, without an emulated browser or extra Tailnet node.
-Umbrel still requires its own login. Apps using other ports or absolute local
-URLs may need explicit routing before they work. This is a fixed Umbrel bridge,
+Umbrel still requires its own login. Installed app ports 30001 (Tailscale), 30003 (Uptime Kuma), and 30004
+(Vaultwarden) have separate authenticated Worker origins. The dashboard adapts
+app-port launch links; HTML assets, redirects, APIs, and WebSockets stay proxied.
+Vaultwarden’s public API configuration is rewritten for the proxy response only.
+Its existing native-client domain is preserved. Caddy accepts only the fixed
+Umbrel host and ports 30000–30099, with a private bridge credential. Additional
+installed app ports need a matching Worker deployment; clone an existing
+wrangler.umbrel-PORT.json with that port and Worker name. This is a fixed Umbrel bridge,
 not a general browser or exit-node browsing feature.
 
 Required Worker secrets: HEADSCALE_ADMIN_KEY, AUTH_ENCRYPTION_KEY, SETUP_TOKEN,
 UMBREL_BRIDGE_SECRET. Keep APP_ORIGIN, OWNER_ID and SETUP_EXPIRES_AT in Worker
 configuration. The public site is https://hk-remote.vercel.app.
+
+The dashboard address is https://hk-remote-umbrel.harrisonk-0.workers.dev.
+Each app uses hk-remote-umbrel-pPORT.harrisonk-0.workers.dev, preserving a
+separate browser origin and app cookies. These Workers bind to the original
+AuthGuard storage, so password/TOTP enrollment is unchanged. App handoff tickets
+are single-use, expire after 45 seconds, and are bound to their destination port.
+They never contain the Headscale token or the user’s password. Logout revokes
+all child app sessions. Since the Umbrel dashboard origin has changed, its own
+login may be required once more. Existing Vaultwarden passkeys are bound to its
+original domain; password login works on the proxy origin.
