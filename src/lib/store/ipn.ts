@@ -18,11 +18,11 @@ netMap.subscribe(async (netMap) => {
 
 export class IpnStateStorage {
   public static setState(id: string, value: string) {
-    window.localStorage[ipnStatePrefix + id] = value;
+    window.sessionStorage[ipnStatePrefix + id] = value;
   }
 
   public static getState(id: string): string {
-    return window.localStorage[ipnStatePrefix + id] || "";
+    return window.sessionStorage[ipnStatePrefix + id] || "";
   }
 }
 
@@ -36,10 +36,10 @@ export function loadIpnProfiles(): {
   let current: string | undefined = IpnStateStorage.getState(currentProfileKey);
   current = current.length ? Hex.decode(current) : undefined;
 
-  for (const key in window.localStorage) {
+  for (const key in window.sessionStorage) {
     if (key !== null && profileRegex.test(key)) {
       try {
-        const rawData = window.localStorage.getItem(key);
+        const rawData = window.sessionStorage.getItem(key);
         if (rawData) {
           const name = key.replace(new RegExp(`^${ipnStatePrefix}`), "");
           profiles[name] = JSON.parse(Hex.decode(rawData));

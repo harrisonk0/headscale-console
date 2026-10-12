@@ -1,0 +1,13 @@
+{
+  "name": "mesh-browser-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "check": "wrangler types && tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.2",
+    "wrangler": "4.149.0"
+  }
+}

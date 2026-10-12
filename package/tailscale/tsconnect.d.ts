@@ -14,7 +14,7 @@ declare global {
   interface IPN {
     run(callbacks: IPNCallbacks): void;
     login(): void;
-    logout(): void;
+    logout(): Promise<void>;
     newProfile(): void;
     deleteProfile(id: string): void;
     switchProfile(id: string): void;

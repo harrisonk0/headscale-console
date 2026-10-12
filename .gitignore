@@ -30,9 +30,18 @@ dist-ssr
 
 # Config
 
-public/config.json
 config.json
 
 # Added by cargo
 
 /target
+
+.build-wasm/
+proxy/node_modules/
+proxy/.wrangler/
+work/
+
+!public/config.json
+proxy/.dev.vars*
+
+proxy/worker-configuration.d.ts

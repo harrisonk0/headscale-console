@@ -175,7 +175,7 @@ func newIPN(jsConfig js.Value) map[string]any {
 
 	logid := lpc.PublicID
 	srv := ipnserver.New(log.Printf, logid, sys.Bus.Get(), sys.NetMon.Get())
-	lb, err := ipnlocal.NewLocalBackend(log.Printf, logid, sys, controlclient.LoginDefault)
+	lb, err := ipnlocal.NewLocalBackend(log.Printf, logid, sys, controlclient.LoginEphemeral)
 	if err != nil {
 		log.Fatalf("ipnlocal.NewLocalBackend: %v", err)
 	}
@@ -217,8 +217,7 @@ func newIPN(jsConfig js.Value) map[string]any {
 				log.Printf("Usage: logout()")
 				return nil
 			}
-			jsIPN.logout()
-			return nil
+			return jsIPN.logout()
 		}),
 		"newProfile": js.FuncOf(func(this js.Value, args []js.Value) any {
 			if len(args) != 0 {
@@ -385,15 +384,15 @@ func (i *jsIPN) login() {
 	go i.lb.StartLoginInteractive(context.Background())
 }
 
-func (i *jsIPN) logout() {
+func (i *jsIPN) logout() js.Value {
 	if i.lb.State() == ipn.NoState {
 		log.Printf("Backend not running")
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	return makePromise(func() (any, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		i.lb.Logout(ctx, ipnauth.Self)
-	}()
+		return nil, i.lb.Logout(ctx, ipnauth.Self)
+	})
 }
 
 func (i *jsIPN) newProfile() {

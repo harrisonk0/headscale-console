@@ -1,169 +1,147 @@
 <script lang="ts">
-  import NoVncClient from "@novnc/novnc/lib/rfb";
+  import RFB from "@novnc/novnc/lib/rfb";
   import { onMount } from "svelte";
-
-  import TriangleAlert from "lucide-svelte/icons/triangle-alert";
-  import ArrowLeft from "lucide-svelte/icons/arrow-left";
-
   import { IpnRawTcpChannel } from "$package/tailscale";
-
-  import * as Alert from "$lib/components/ui/alert";
-  import { Button } from "$lib/components/ui/button";
-  import { Label } from "$lib/components/ui/label";
-  import { Input } from "$lib/components/ui/input";
-
-  import SelectNode from "../data/node/SelectNode.svelte";
-
-  interface Props {
+  import { Clipboard, Keyboard, Eye, Scaling } from "lucide-svelte";
+  let {
+    hostname = "",
+    port = 5900,
+    onState = () => {},
+    onError = () => {},
+  }: {
     hostname?: string;
     port?: number;
-  }
-
-  const { hostname: initialHostname = "", port: initialPort = 5900 }: Props =
-    $props();
-
-  let port = $state<number>(initialPort);
-  let hostname = $state<string>(initialHostname);
-  let username = $state<string>("");
-  let password = $state<string>("");
-
-  let rawChannel = $state<IpnRawTcpChannel | undefined>();
-  let noVncClient = $state<NoVncClient | undefined>();
-
-  let isLoading = $state<boolean>(false);
-  let isLoggedIn = $state<boolean>(false);
-  let errorMessage = $state<unknown>();
-
+    onState?: (s: string) => void;
+    onError?: (e: string) => void;
+  } = $props();
   let el: HTMLDivElement;
-
+  let client: RFB | undefined;
+  let channel: IpnRawTcpChannel | undefined;
+  let credentials = $state(false);
+  let password = $state("");
+  let username = $state("");
+  let ready = $state(false);
+  let clipboard = $state("");
+  let showClipboard = $state(false);
+  let viewOnly = $state(false);
+  let scale = $state(true);
+  function sendCredentials(e: SubmitEvent) {
+    e.preventDefault();
+    client?.sendCredentials({ password, username, target: "" });
+    password = "";
+    credentials = false;
+  }
+  function changeView() {
+    viewOnly = !viewOnly;
+    if (client) client.viewOnly = viewOnly;
+  }
+  function changeScale() {
+    scale = !scale;
+    if (client) client.scaleViewport = scale;
+  }
   onMount(() => {
-    window.addEventListener("beforeunload", beforeUnloadHandler);
-
+    let closed = false;
+    (async () => {
+      try {
+        onState("Connecting");
+        const raw = await IpnRawTcpChannel.connect({ hostname, port, connectTimeoutSeconds: 20 });
+        if (closed) {
+          raw.close();
+          return;
+        }
+        channel = raw;
+        client = new RFB(el, raw, { credentials: { username: "", password: "", target: "" } });
+        client.scaleViewport = true;
+        client.resizeSession = true;
+        client.addEventListener("connect", () => {
+          if (!closed) {
+            ready = true;
+            onState("Connected");
+          }
+        });
+        client.addEventListener("disconnect", (e) => {
+          if (!closed) {
+            ready = false;
+            onState("Disconnected");
+            if (!e.detail.clean)
+              onError(
+                "The VNC server closed the connection. Check its password and port, then retry.",
+              );
+          }
+        });
+        client.addEventListener("credentialsrequired", () => (credentials = true));
+        client.addEventListener("securityfailure", (e) => {
+          if (!closed) {
+            onState("Disconnected");
+            onError(e.detail.reason || "The VNC server rejected the login.");
+          }
+        });
+        client.addEventListener("clipboard", (e) => (clipboard = e.detail.text));
+      } catch (e) {
+        if (!closed) {
+          onState("Disconnected");
+          onError(e instanceof Error ? e.message : String(e));
+        }
+      }
+    })();
+    const leave = (e: BeforeUnloadEvent) => {
+      if (ready) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", leave);
     return () => {
-      window.removeEventListener("beforeunload", beforeUnloadHandler);
-      noVncClient?.disconnect();
-      rawChannel?.close();
+      closed = true;
+      window.removeEventListener("beforeunload", leave);
+      client?.disconnect();
+      channel?.close();
+      password = "";
     };
   });
-
-  const beforeUnloadHandler = (event: Event) => {
-    if (!isLoggedIn) return;
-    event.preventDefault(); // Recommended
-    event.returnValue = true; // Included for legacy support, e.g. Chrome/Edge < 119
-  };
-
-  async function onLogin() {
-    if (isLoading) return;
-    try {
-      isLoading = true;
-      errorMessage = undefined;
-
-      if (rawChannel) rawChannel.close();
-
-      rawChannel = await IpnRawTcpChannel.connect({
-        port,
-        hostname,
-      });
-
-      noVncClient = new NoVncClient(el, rawChannel, {
-        credentials: { password, username, target: "" },
-      });
-
-      noVncClient.scaleViewport = true;
-      noVncClient.resizeSession = true;
-
-      noVncClient.addEventListener("securityfailure", (ev) => {
-        errorMessage = ev.detail.reason;
-        isLoggedIn = false;
-      });
-
-      noVncClient.addEventListener("connect", () => {
-        isLoggedIn = true;
-      });
-      noVncClient.addEventListener("disconnect", () => {
-        isLoggedIn = false;
-      });
-
-      noVncClient.addEventListener("credentialsrequired", (ev) => {
-        console.warn(ev);
-      });
-    } catch (err) {
-      console.error(err);
-      errorMessage =
-        err instanceof Error
-          ? err.toString()
-          : typeof err === "string"
-            ? err
-            : JSON.stringify(err, null, 2);
-    } finally {
-      isLoading = false;
-      password = "";
-    }
-  }
 </script>
 
-{#if !isLoggedIn}
-  <form
-    class="px-6 py-4 [&>div]:space-y-2 space-y-6 w-full max-w-96 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 sm:border bg-background"
-    onsubmit={async (ev) => {
-      ev.preventDefault();
-      await onLogin();
-    }}
-  >
-    <div>
-      <Button
-        onclick={window.appRouter.anchorOnclickHandler()}
-        href="#/"
-        variant="link"
-        class="text-muted-foreground gap-1 text-xs px-0"
+<div class="vnc-workspace">
+  <div class="vnc-screen" bind:this={el}></div>
+  {#if ready}<div class="vnc-controls">
+      <button onclick={() => (showClipboard = !showClipboard)} aria-label="Open clipboard"
+        ><Clipboard size={16} />Clipboard</button
+      ><button onclick={() => client?.sendCtrlAltDel()} disabled={viewOnly}
+        ><Keyboard size={16} />Ctrl Alt Del</button
+      ><button onclick={changeView} aria-pressed={viewOnly}
+        ><Eye size={16} />{viewOnly ? "View only" : "Control"}</button
+      ><button onclick={changeScale} aria-pressed={scale}
+        ><Scaling size={16} />{scale ? "Fit" : "Actual size"}</button
       >
-        <ArrowLeft class="!h-3 !w-3" />
-        Back
-      </Button>
-      <h3 class="scroll-m-20 text-2xl font-semibold tracking-tight">
-        VNC Authentication
-      </h3>
-      <!-- <p class="text-muted-foreground">
-        A username and/or password may be required, depending on the VNC server
-        configuration.
-      </p> -->
-    </div>
-
-    {#if typeof errorMessage !== "undefined"}
-      <div>
-        <Alert.Root variant="destructive">
-          <TriangleAlert class="size-4" />
-          <Alert.Title>Session Error</Alert.Title>
-          <Alert.Description>{errorMessage}</Alert.Description>
-        </Alert.Root>
-      </div>
-    {/if}
-
-    <div
-      class="grid items-center gap-x-2"
-      style="grid-template-columns: 1fr 4rem;"
-    >
-      <Label class="required">Host</Label>
-      <Label class="required !m-0">Port</Label>
-
-      <SelectNode bind:hostname />
-      <Input type="number" required bind:value={port} />
-    </div>
-
-    <div>
-      <Label>Username</Label>
-      <Input bind:value={username} />
-    </div>
-
-    <div>
-      <Label>Password</Label>
-      <Input bind:value={password} type="password" />
-    </div>
-
-    <Button type="submit" class="w-full !mt-12" disabled={isLoading}>
-      Connect
-    </Button>
-  </form>
-{/if}
-
-<div bind:this={el} class="h-full w-full" class:invisible={!isLoggedIn}></div>
+    </div>{/if}{#if showClipboard}<section class="clipboard-panel">
+      <label for="vnc-clipboard">Shared clipboard</label><textarea
+        id="vnc-clipboard"
+        bind:value={clipboard}></textarea><button
+        class="mesh-primary"
+        disabled={viewOnly}
+        onclick={() => {
+          client?.clipboardPasteFrom(clipboard);
+          showClipboard = false;
+        }}>Send to desktop</button
+      >
+      <p class="field-hint">Available when the remote VNC server supports clipboard sharing.</p>
+    </section>{/if}{#if credentials}<form class="vnc-auth session-card" onsubmit={sendCredentials}>
+      <h2>Unlock {hostname}.</h2>
+      <p>The VNC server needs credentials.</p>
+      <label for="vnc-user"
+        >Username, if required<input
+          id="vnc-user"
+          autocomplete="username"
+          bind:value={username}
+        /></label
+      ><label for="vnc-password"
+        >VNC password<input
+          id="vnc-password"
+          type="password"
+          autocomplete="current-password"
+          bind:value={password}
+        /></label
+      ><button class="mesh-primary">Unlock desktop</button>
+      <p class="field-hint">Your password is never saved by this app.</p>
+    </form>{/if}
+</div>

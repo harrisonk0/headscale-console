@@ -16,7 +16,7 @@
   }
 
   function logout() {
-    delete window.localStorage[ipnStatePrefix + "_current-profile"];
+    delete window.sessionStorage[ipnStatePrefix + "_current-profile"];
     window.ipn.logout();
   }
 </script>

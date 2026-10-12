@@ -17,10 +17,12 @@ import toast from "$lib/utils/toast";
 import routes from "$routes";
 
 import "./app.css";
+import "./mesh.css";
 
 import LoadingScreen from "./LoadingScreen.svelte";
 import NotFound from "./routes/404.svelte";
 import Critical from "./Critical.svelte";
+import SessionStart from "$lib/components/SessionStart.svelte";
 
 declare global {
   interface Window {
@@ -60,21 +62,36 @@ declare global {
     return;
   }
 
-  const params = new URLSearchParams(window.location.search);
-  const urlParameters = {
-    authKey: params.get("authkey") || undefined,
-    tags:
-      (params.get("tags") || "")
-        .split(/\s+|,|;/)
-        ?.map((i) => i.trim())
-        .filter((i) => i.length > 0) || [],
-  };
-  console.debug({ urlParameters });
-
+  // Remove legacy disk-persisted private identities and token-bearing URLs.
+  for (const key of Object.keys(localStorage))
+    if (key.startsWith(ipnStatePrefix)) localStorage.removeItem(key);
+  if (new URLSearchParams(location.search).has("authkey"))
+    history.replaceState(null, "", location.pathname + location.hash);
   Object.assign(window, { ipnProfiles: loadIpnProfiles() });
-
   const cfg = await loadAppConfig();
-
+  const transport = cfg as typeof cfg & { relayProxyHost?: string; relayOriginHost?: string };
+  Object.assign(window, {
+    __meshRelayProxy: transport.relayProxyHost || "",
+    __meshRelayOrigin: transport.relayOriginHost || "",
+  });
+  let sessionAuthKey: string | undefined;
+  if (!window.ipnProfiles.currentProfile) {
+    await unmount(loadingScreen!);
+    loadingScreen = undefined;
+    sessionAuthKey = await new Promise<string>((resolve) => {
+      const gate = mount(SessionStart, {
+        target: appEl,
+        props: {
+          controlUrl: cfg.controlUrl,
+          onReady: async (key: string) => {
+            await unmount(gate);
+            resolve(key);
+          },
+        },
+      });
+    });
+    loadingScreen = mount(LoadingScreen, { target: appEl });
+  }
   loadUserSettings(cfg.defaults);
 
   Object.assign(window, {
@@ -89,9 +106,10 @@ declare global {
         });
       },
       routeAll: true,
-      authKey: urlParameters.authKey,
+      authKey: sessionAuthKey,
+      hostname: "mesh-browser-" + crypto.randomUUID().slice(0, 8),
       controlURL: cfg.controlUrl,
-      advertiseTags: [...urlParameters.tags, ...cfg.tags].join(";"),
+      advertiseTags: "",
     }),
     appRouter: new AppRouter({
       target: appEl,
@@ -100,88 +118,80 @@ declare global {
     }),
   });
 
-  window.ipnEventHandler.addEventListener(
-    window.ipnEventHandler.Events.state,
-    async (ev) => {
-      console.info("state:", ev.detail.state);
-      switch (ev.detail.state) {
-        case "NeedsLogin":
-          if (stopped) break;
+  window.ipnEventHandler.addEventListener(window.ipnEventHandler.Events.state, async (ev) => {
+    console.info("state:", ev.detail.state);
+    switch (ev.detail.state) {
+      case "NeedsLogin":
+        if (stopped) break;
 
-          Object.assign(window, { ipnProfiles: loadIpnProfiles() });
+        Object.assign(window, { ipnProfiles: loadIpnProfiles() });
 
-          if (loadingScreen) {
-            await unmount(loadingScreen);
-            loadingScreen = undefined;
-          }
+        if (loadingScreen) {
+          await unmount(loadingScreen);
+          loadingScreen = undefined;
+        }
 
-          window.appRouter.onResolve = () => "/_internal/auth";
-          window.appRouter.resolve();
+        window.appRouter.onResolve = () => "/_internal/auth";
+        window.appRouter.resolve();
 
-          if (!Object.keys(window.ipnProfiles.profiles).length) {
-            window.ipn.login();
-          }
+        if (!Object.keys(window.ipnProfiles.profiles).length) {
+          // Trigger login only with the API-created ephemeral key.
+          if (sessionAuthKey) window.ipn.login();
+        }
 
-          break;
-        case "Running":
-          Object.assign(window, { ipnProfiles: loadIpnProfiles() });
+        break;
+      case "Running":
+        Object.assign(window, { ipnProfiles: loadIpnProfiles() });
 
-          if (
-            !window.ipnProfiles.current ||
-            !window.ipnProfiles.profiles[window.ipnProfiles.current]
-          ) {
-            throw new Error("Failed to load profile");
-          }
+        if (
+          !window.ipnProfiles.current ||
+          !window.ipnProfiles.profiles[window.ipnProfiles.current]
+        ) {
+          throw new Error("Failed to load profile");
+        }
 
-          window.appRouter.onResolve = undefined;
+        window.appRouter.onResolve = undefined;
 
-          if (loadingScreen) {
-            await unmount(loadingScreen);
-            loadingScreen = undefined;
-          }
+        if (loadingScreen) {
+          await unmount(loadingScreen);
+          loadingScreen = undefined;
+        }
 
-          await window.appRouter.resolve();
+        await window.appRouter.resolve();
 
-          break;
-        case "Stopped":
-          stopped = true;
+        break;
+      case "Stopped":
+        stopped = true;
 
-          await window.appRouter.unmount();
+        await window.appRouter.unmount();
 
-          delete window.localStorage[ipnStatePrefix + "_current-profile"];
+        for (const key of Object.keys(sessionStorage))
+          if (key.startsWith(ipnStatePrefix)) sessionStorage.removeItem(key);
 
-          mount(Critical, {
-            target: appEl,
-            props: {
-              title: "Stopped",
-              message:
-                "The session has ended. Refresh the page to start a new session.",
-            },
-          });
-          break;
-      }
-    },
-  );
+        mount(Critical, {
+          target: appEl,
+          props: {
+            title: "Stopped",
+            message: "The session has ended. Refresh the page to start a new session.",
+          },
+        });
+        break;
+    }
+  });
 
-  window.ipnEventHandler.addEventListener(
-    window.ipnEventHandler.Events.netMap,
-    (ev) => {
-      try {
-        if (typeof ev.detail.netMapStr !== "string") return;
-        netMap.set(JSON.parse(ev.detail.netMapStr));
-      } catch (err) {
-        console.error(err);
-        toast.error(`Failed to parse NetMap: ${err?.toString()}`);
-      }
-    },
-  );
+  window.ipnEventHandler.addEventListener(window.ipnEventHandler.Events.netMap, (ev) => {
+    try {
+      if (typeof ev.detail.netMapStr !== "string") return;
+      netMap.set(JSON.parse(ev.detail.netMapStr));
+    } catch (err) {
+      console.error(err);
+      toast.error(`Failed to parse NetMap: ${err?.toString()}`);
+    }
+  });
 
-  window.ipnEventHandler.addEventListener(
-    window.ipnEventHandler.Events.panicRecover,
-    (ev) => {
-      toast.error("Panic Recover: " + ev.detail.err);
-    },
-  );
+  window.ipnEventHandler.addEventListener(window.ipnEventHandler.Events.panicRecover, (ev) => {
+    toast.error("Panic Recover: " + ev.detail.err);
+  });
 
   window.ipn.run(window.ipnEventHandler);
 })();

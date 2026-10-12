@@ -1,66 +1,41 @@
 <script lang="ts">
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import { Input } from "$lib/components/ui/input";
-
   import { netMap } from "$lib/store/ipn";
-
-  interface Props {
-    hostname: string;
-    filter?: () => boolean;
-    required?: boolean;
-  }
-
   let {
     hostname = $bindable(""),
-    filter = () => true,
     required = true,
-  }: Props = $props();
-
+    filter = () => true,
+  }: {
+    hostname: string;
+    required?: boolean;
+    filter?: (peer: IPNNetMapPeerNode) => boolean;
+  } = $props();
+  let custom = $state(false);
   let peers = $derived(
     ($netMap?.peers || [])
-      .filter((i) => i.online && !i.expired)
-      .filter(
-        (i) =>
-          !hostname.length ||
-          new RegExp(hostname).test(i.name.split(".")[0]) ||
-          i.addresses.find((i) => new RegExp(hostname).test(i))?.length
-      )
       .filter(filter)
+      .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
   );
 </script>
 
-<DropdownMenu.Root>
-  <DropdownMenu.Trigger>
-    {#snippet child({ props: { type: _, ...props } })}
-      <Input {...props} {required} bind:value={hostname} />
-    {/snippet}
-  </DropdownMenu.Trigger>
-
-  <DropdownMenu.Content
-    onOpenAutoFocus={(e) => e.preventDefault()}
-    onCloseAutoFocus={(e) => e.preventDefault()}
-    align="start"
-    class="min-w-[262px]"
-  >
-    {#if peers.length}
-      <DropdownMenu.Group>
-        {#each peers as peer}
-          {@const name = peer.name.split(".")[0]}
-          <DropdownMenu.Item class="flex-col items-start">
-            <button
-              class="h-full w-full text-left space-y-1.5"
-              onclick={() => (hostname = name)}
-            >
-              <p>
-                {name}
-              </p>
-              <p class="text-xs text-muted-foreground">
-                {peer.addresses.join(", ")}
-              </p>
-            </button>
-          </DropdownMenu.Item>
-        {/each}
-      </DropdownMenu.Group>
-    {/if}
-  </DropdownMenu.Content>
-</DropdownMenu.Root>
+<select
+  class="mesh-select"
+  aria-label="Choose a device"
+  {required}
+  value={custom ? "__custom" : hostname}
+  onchange={(e) => {
+    const value = e.currentTarget.value;
+    custom = value === "__custom";
+    hostname = custom ? "" : value;
+  }}
+  ><option value="" disabled>Choose a machine…</option>{#each peers as peer}<option
+      value={peer.name.split(".")[0]}
+      >{peer.name.split(".")[0]} · {peer.os}{!peer.online ? " · Offline" : ""}</option
+    >{/each}<option value="__custom">Enter a hostname or IP…</option></select
+>
+{#if custom}<input
+    class="mesh-input"
+    aria-label="Custom hostname or IP address"
+    placeholder="Hostname or IP address"
+    bind:value={hostname}
+    {required}
+  />{/if}

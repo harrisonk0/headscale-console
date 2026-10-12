@@ -1,197 +1,98 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { Terminal, type ITerminalOptions } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
-  import {
-    Terminal,
-    type IDisposable,
-    type ITerminalOptions,
-  } from "@xterm/xterm";
-  import { onMount } from "svelte";
-
-  interface Props {
+  let {
+    hostname = "",
+    username = "",
+    terminalOptions,
+    onState = () => {},
+    onError = () => {},
+  }: {
     hostname?: string;
+    username?: string;
     terminalOptions?: ITerminalOptions;
-  }
-
-  const { hostname: initialHostname = "", terminalOptions }: Props = $props();
-
-  let hostname = $state(initialHostname);
-  let username = $state("");
-  let session: IPNSSHSession | undefined = $state();
-
+    onState?: (s: string) => void;
+    onError?: (e: string) => void;
+  } = $props();
   let el: HTMLDivElement;
-
-  const resizeObserver = new ResizeObserver(() => fitAddon.fit());
-
-  const terminal = new Terminal({
-    cursorBlink: true,
-    allowProposedApi: true,
-    ...terminalOptions,
-  });
-
-  const fitAddon = new FitAddon();
-  terminal.loadAddon(fitAddon);
-
-  const webLinksAddon = new WebLinksAddon((event, uri) =>
-    event.view?.open(uri, "_blank", "noopener")
-  );
-  terminal.loadAddon(webLinksAddon);
-
   onMount(() => {
-    window.addEventListener("beforeunload", beforeUnloadHandler);
-
+    let closed = false;
+    let read: ((s: string) => void) | undefined;
+    let session: IPNSSHSession | undefined;
+    const terminal = new Terminal({
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: '"SFMono-Regular", Consolas, monospace',
+      theme: {
+        background: "#0a1016",
+        foreground: "#dbe8e0",
+        cursor: "#a7efc4",
+        selectionBackground: "#2d4d43",
+      },
+      ...terminalOptions,
+    });
+    const fit = new FitAddon();
+    const links = new WebLinksAddon((_e, url) => window.open(url, "_blank", "noopener"));
+    terminal.loadAddon(fit);
+    terminal.loadAddon(links);
     terminal.open(el);
-    resizeObserver.observe(el);
-    fitAddon.fit();
+    fit.fit();
     terminal.focus();
-
-    attachHostnameListener();
-
-    return () => {
-      window.removeEventListener("beforeunload", beforeUnloadHandler);
-
-      session?.close();
-      terminal.dispose();
-      fitAddon.dispose();
-      webLinksAddon.dispose();
-      resizeObserver.disconnect();
-    };
-  });
-
-  function attachHostnameListener() {
-    terminal.write(`host: ${hostname}`);
-
-    const listener = terminal.onKey(async (ev) => {
-      switch (ev.key) {
-        case "\u0016": // CTRL + v
-          navigator.clipboard
-            .readText()
-            .then((clipboard) => {
-              terminal.write(clipboard);
-              hostname = hostname + clipboard;
-            })
-            .catch((err) => {
-              console.warn("Failed to read text from clipboard:", err);
-            });
-          break;
-        case "\u000c": // CTRL + l
-          hostname = "";
-          await new Promise((r) => terminal.writeln("\r", () => r(null)));
-          terminal.clear();
-          terminal.write(`host: `);
-          break;
-        case "\u007f": // Backspace
-          if (!hostname.length) break;
-          hostname = hostname.slice(0, hostname.length - 1);
-          await new Promise((r) => terminal.writeln("\r", () => r(null)));
-          terminal.clear();
-          terminal.write(`host: ${hostname}`);
-          break;
-        case "\r":
-          listener?.dispose();
-          terminal.writeln("\r");
-          attachUsernameListener();
-          break;
-        default:
-          if (ev.key.length !== 1) break;
-          hostname = hostname + ev.key;
-          terminal.write(ev.key);
-          break;
+    const observer = new ResizeObserver(() => {
+      if (!closed) {
+        fit.fit();
+        session?.resize(terminal.rows, terminal.cols);
       }
     });
-  }
-
-  function attachUsernameListener() {
-    terminal.write(`${hostname} login: `);
-
-    const listener = terminal.onKey(async (ev) => {
-      switch (ev.key) {
-        case "\u0016": // CTRL + v
-          navigator.clipboard
-            .readText()
-            .then((clipboard) => {
-              terminal.write(clipboard);
-              username = username + clipboard;
-            })
-            .catch((err) => {
-              console.warn("Failed to read text from clipboard:", err);
-            });
-          break;
-        case "\u000c": // CTRL + l
-          username = "";
-          await new Promise((r) => terminal.writeln("\r", () => r(null)));
-          terminal.clear();
-          terminal.write(`${hostname} login: `);
-          break;
-        case "\u007f": // Backspace
-          if (!username.length) break;
-          username = username.slice(0, username.length - 1);
-          await new Promise((r) => terminal.writeln("\r", () => r(null)));
-          terminal.clear();
-          terminal.write(`${hostname} login: ${username}`);
-          break;
-        case "\r":
-          listener?.dispose();
-          terminal.writeln("\r");
-          login();
-          break;
-        default:
-          if (ev.key.length !== 1) break;
-          username = username + ev.key;
-          terminal.write(ev.key);
-          break;
-      }
-    });
-  }
-
-  function login() {
-    let onDataHook: ((data: string) => void) | undefined;
-    terminal.onData((e) => onDataHook?.(e));
-
-    session = window.ipn.ssh(hostname, username.trim(), {
-      writeFn: (input) => {
-        terminal.write(input);
+    observer.observe(el);
+    const data = terminal.onData((value) => read?.(value));
+    terminal.writeln(`\x1b[38;2;167;239;196mConnecting to ${username}@${hostname}…\x1b[0m\r\n`);
+    session = window.ipn.ssh(hostname, username, {
+      writeFn: (s) => {
+        if (!closed) terminal.write(s);
       },
-      writeErrorFn: (err) => {
-        // callbacks.onError?.(err)
-        terminal.write(err);
-        console.error(err);
+      writeErrorFn: (e) => {
+        if (!closed) {
+          terminal.write(e);
+          onError(e);
+        }
       },
-      setReadFn(hook) {
-        onDataHook = hook;
-      },
+      setReadFn: (hook) => (read = hook),
       rows: terminal.rows,
       cols: terminal.cols,
-      onConnectionProgress: () => {
-        // console.debug("Connection progress");
-      },
+      onConnectionProgress: () => onState("Connecting"),
       onConnected: () => {
-        // console.debug("Connected!");
+        if (!closed) onState("Connected");
       },
       onDone: () => {
-        onDataHook = undefined;
-        session?.close();
-        session = undefined;
-        username = "";
-
-        terminal.write("Press any key to continue... ");
-
-        const cleanupListener = terminal.onKey((ev) => {
-          cleanupListener.dispose();
-          terminal.clear();
-          terminal.reset();
-          attachHostnameListener();
-        });
+        if (!closed) {
+          read = undefined;
+          onState("Disconnected");
+          terminal.writeln(
+            "\r\n\x1b[90mSession ended. Reconnect or choose another machine above.\x1b[0m",
+          );
+        }
       },
       timeoutSeconds: 30,
     });
-  }
-
-  const beforeUnloadHandler = (event: Event) => {
-    if (!session) return;
-    event.preventDefault(); // Recommended
-    event.returnValue = true; // Included for legacy support, e.g. Chrome/Edge < 119
-  };
+    const leave = (e: BeforeUnloadEvent) => {
+      if (read) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", leave);
+    return () => {
+      closed = true;
+      window.removeEventListener("beforeunload", leave);
+      session?.close();
+      observer.disconnect();
+      data.dispose();
+      terminal.dispose();
+    };
+  });
 </script>
 
-<div bind:this={el} class="h-full w-full"></div>
+<div class="mesh-terminal" bind:this={el}></div>

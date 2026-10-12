@@ -47,7 +47,7 @@ jobs:
           sudo apt install -y binaryen
 
       - name: Build Golang WASM
-        run: go build -trimpath -ldflags "-X tailscale.com/version.shortStamp=1.102.4 -X tailscale.com/version.longStamp=1.102.4-HeadscaleConsole-check-${{ github.sha }} -s -w" -o ./package/tailscale/pkg/tailscale.wasm ./package/tailscale/tailscale.go
+        run: python3 scripts/build-browser-wasm.py
 
       - name: Optimize Golang WASM
         run: wasm-opt --enable-bulk-memory --enable-sign-ext --enable-nontrapping-float-to-int -Oz ./package/tailscale/pkg/tailscale.wasm -o ./package/tailscale/pkg/tailscale.wasm

@@ -25,7 +25,7 @@ jobs:
 
       - name: Build Tailscale networking WASM
         run: |
-          GOOS=js GOARCH=wasm go build -trimpath -ldflags "-X tailscale.com/version.shortStamp=1.102.4 -X tailscale.com/version.longStamp=1.102.4-HeadscaleConsole-${GITHUB_SHA} -s -w" -o ./package/tailscale/pkg/tailscale.wasm ./package/tailscale/tailscale.go
+          python3 scripts/build-browser-wasm.py
           wasm-opt --enable-bulk-memory --enable-sign-ext --enable-nontrapping-float-to-int -Oz ./package/tailscale/pkg/tailscale.wasm -o ./package/tailscale/pkg/tailscale.wasm
           cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" ./package/tailscale/pkg/wasm_exec.js
 
@@ -54,6 +54,8 @@ jobs:
       - name: Write public Headscale config
         env:
           HEADSCALE_CONTROL_URL: ${{ vars.HEADSCALE_CONTROL_URL }}
+          HEADSCALE_RELAY_PROXY_HOST: ${{ vars.HEADSCALE_RELAY_PROXY_HOST }}
+          HEADSCALE_RELAY_ORIGIN_HOST: ${{ vars.HEADSCALE_RELAY_ORIGIN_HOST }}
         run: node scripts/write-public-config.mjs
 
       - name: Build frontend

@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mesh-browser-proxy",
+  "main": "src/index.ts",
+  "account_id": "636428d96377b510cae6a471436487ee",
+  "compatibility_date": "2026-10-12",
+  "workers_dev": true,
+  "vars": {
+    "ORIGIN": "https://headscale.movenis.dev",
+    "APP_ORIGIN": "https://headscale-console-vercel-static.vercel.app"
+  },
+  "observability": {"enabled": true, "head_sampling_rate": 0.1, "traces": {"enabled": true, "head_sampling_rate": 0.1}}
+}
