@@ -22,9 +22,14 @@ export async function loadAppConfig(): Promise<AppConfig> {
   let data: Partial<AppConfig> = {};
   try {
     const res = await fetch("./config.json");
+    const contentType = res.headers
+      .get("content-type")
+      ?.split(";", 1)[0]
+      .trim()
+      .toLowerCase();
     if (
       res.status === 200 &&
-      res.headers.get("content-type") === "application/json"
+      contentType === "application/json"
     ) {
       data = await res.json();
     }
