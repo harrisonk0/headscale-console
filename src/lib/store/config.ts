@@ -1,4 +1,5 @@
 import { writable } from "svelte/store";
+import appVersion from "virtual:app-version";
 
 import toast from "$lib/utils/toast";
 
@@ -21,16 +22,11 @@ appConfig.subscribe((cfg) => console.debug("AppConfig:", cfg));
 export async function loadAppConfig(): Promise<AppConfig> {
   let data: Partial<AppConfig> = {};
   try {
-    const res = await fetch("./config.json");
-    const contentType = res.headers
-      .get("content-type")
-      ?.split(";", 1)[0]
-      .trim()
-      .toLowerCase();
-    if (
-      res.status === 200 &&
-      contentType === "application/json"
-    ) {
+    const res = await fetch("./config.json?version=" + encodeURIComponent(appVersion), {
+      cache: "no-store",
+    });
+    const contentType = res.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+    if (res.status === 200 && contentType === "application/json") {
       data = await res.json();
     }
   } catch (err) {

@@ -74,15 +74,27 @@ declare global {
     __meshRelayProxy: transport.relayProxyHost || "",
     __meshRelayOrigin: transport.relayOriginHost || "",
   });
+  const setupToken = new URLSearchParams(location.hash.split("?")[1] || "").get("setup") || "";
+  if (setupToken) history.replaceState(null, "", location.pathname + "#/setup");
+  let authenticated = false;
+  try {
+    const r = await fetch("/api/remote/status", {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    });
+    if (r.ok) authenticated = (await r.json()).authenticated;
+  } catch {}
   let sessionAuthKey: string | undefined;
-  if (!window.ipnProfiles.currentProfile) {
+  if (setupToken || !authenticated || !window.ipnProfiles.currentProfile) {
     await unmount(loadingScreen!);
     loadingScreen = undefined;
     sessionAuthKey = await new Promise<string>((resolve) => {
       const gate = mount(SessionStart, {
         target: appEl,
         props: {
-          controlUrl: cfg.controlUrl,
+          setupToken,
+          needsNode: !window.ipnProfiles.currentProfile,
           onReady: async (key: string) => {
             await unmount(gate);
             resolve(key);

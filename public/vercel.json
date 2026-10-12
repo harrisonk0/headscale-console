@@ -1,0 +1,40 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/remote/:path*",
+      "destination": "https://mesh-browser-proxy.harrisonk-0.workers.dev/__remote/auth/:path*"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "headscale-console-vercel-static.vercel.app"
+        }
+      ],
+      "destination": "https://hk-remote.vercel.app/:path*",
+      "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/:path*",
+      "headers": [
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        }
+      ]
+    }
+  ]
+}

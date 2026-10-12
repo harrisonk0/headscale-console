@@ -69,7 +69,15 @@ export default defineConfig(({}) => {
         $routes: resolve(__dirname, "src/routes"),
       },
     },
-    server: {},
+    server: {
+      proxy: {
+        "/api/remote": {
+          target: "http://localhost:8787",
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/api\/remote/, "/__remote/auth"),
+        },
+      },
+    },
     optimizeDeps: {
       exclude: ["node:fs", "fs"],
     },

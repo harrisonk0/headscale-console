@@ -7,7 +7,40 @@
   "workers_dev": true,
   "vars": {
     "ORIGIN": "https://headscale.movenis.dev",
-    "APP_ORIGIN": "https://headscale-console-vercel-static.vercel.app"
+    "APP_ORIGIN": "https://hk-remote.vercel.app",
+    "OWNER_ID": "1",
+    "SETUP_EXPIRES_AT": "1791923306315"
   },
-  "observability": {"enabled": true, "head_sampling_rate": 0.1, "traces": {"enabled": true, "head_sampling_rate": 0.1}}
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1,
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AUTH",
+        "class_name": "AuthGuard"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-auth",
+      "new_sqlite_classes": [
+        "AuthGuard"
+      ]
+    }
+  ],
+  "secrets": {
+    "required": [
+      "HEADSCALE_ADMIN_KEY",
+      "AUTH_ENCRYPTION_KEY",
+      "SETUP_TOKEN",
+      "UMBREL_BRIDGE_SECRET"
+    ]
+  }
 }

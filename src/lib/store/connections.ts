@@ -34,7 +34,15 @@ export function connectionUrl(host = "", proto: Protocol = "ssh") {
 }
 export async function endSession() {
   try {
-    await window.ipn.logout();
+    await Promise.allSettled([
+      window.ipn.logout(),
+      fetch("/api/remote/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        credentials: "same-origin",
+      }),
+    ]);
   } catch {
     console.warn(
       "The browser session ended locally. Headscale will remove its ephemeral node after the inactivity timeout.",

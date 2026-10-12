@@ -23,11 +23,63 @@
     type Protocol,
   } from "$lib/store/connections";
   import Layout from "../Layout.svelte";
-  import {portChecks, portKey, checkDevices, protocolPort} from "$lib/store/reachability";
+  import { portChecks, portKey, checkDevices, protocolPort } from "$lib/store/reachability";
   let checkingPorts = $state(false);
-  async function refreshPorts(force=false) {if(checkingPorts)return;checkingPorts=true;try{await checkDevices(peers,force);}finally{checkingPorts=false;}}
-  function available(peer: IPNNetMapPeerNode, protocol: Protocol) {return peer.online && !peer.expired && (protocol!=="ssh" || peer.tailscaleSSHEnabled) && $portChecks[portKey(peer.addresses[0],protocolPort[protocol])]?.state === "open";}
-  function availabilityTitle(peer: IPNNetMapPeerNode, protocol: Protocol) {if(!peer.online)return "Device is offline";if(protocol==="ssh"&&!peer.tailscaleSSHEnabled)return "Tailscale SSH is not enabled";const state=$portChecks[portKey(peer.addresses[0],protocolPort[protocol])]?.state;return state==="open" ? `Port ${protocolPort[protocol]} is reachable` : state==="unreachable" ? `Port ${protocolPort[protocol]} is unreachable from this browser` : "Checking port availability…";}
+  async function refreshPorts(force = false) {
+    if (checkingPorts) return;
+    checkingPorts = true;
+    try {
+      await checkDevices(peers, force);
+    } finally {
+      checkingPorts = false;
+    }
+  }
+  function available(peer: IPNNetMapPeerNode, protocol: Protocol) {
+    return (
+      peer.online &&
+      !peer.expired &&
+      (protocol !== "ssh" || peer.tailscaleSSHEnabled) &&
+      $portChecks[portKey(peer.addresses[0], protocolPort[protocol])]?.state === "open"
+    );
+  }
+  function availabilityTitle(peer: IPNNetMapPeerNode, protocol: Protocol) {
+    if (!peer.online) return "Device is offline";
+    if (protocol === "ssh" && !peer.tailscaleSSHEnabled) return "Tailscale SSH is not enabled";
+    const state = $portChecks[portKey(peer.addresses[0], protocolPort[protocol])]?.state;
+    return state === "open"
+      ? `Port ${protocolPort[protocol]} is reachable`
+      : state === "unreachable"
+        ? `Port ${protocolPort[protocol]} is unreachable from this browser`
+        : "Checking port availability…";
+  }
+  let openingUmbrel = $state(false);
+  let webError = $state("");
+  async function openUmbrel() {
+    if (openingUmbrel) return;
+    openingUmbrel = true;
+    webError = "";
+    const popup = window.open("about:blank", "_blank");
+    if (popup) popup.opener = null;
+    try {
+      const r = await fetch("/api/remote/umbrel-ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        credentials: "same-origin",
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Could not open Umbrel.");
+      if (popup) popup.location.href = data.url;
+      else {
+        webError = "Your browser blocked the new tab. Allow popups for HK Remote and try again.";
+      }
+    } catch (e) {
+      popup?.close();
+      webError = e instanceof Error ? e.message : "Could not open Umbrel.";
+    } finally {
+      openingUmbrel = false;
+    }
+  }
   let search = $state("");
   let filter = $state("all");
   let copied = $state("");
@@ -121,6 +173,7 @@
           >{/each}
       </div>
     </section>{/if}
+  {#if webError}<div class="mesh-error" role="alert">{webError}</div>{/if}
   <section class="device-section">
     <div class="device-toolbar">
       <div>
@@ -136,7 +189,10 @@
         /><kbd>/</kbd></label
       >
     </div>
-    <div class="filter-tabs" aria-label="Device filters"><button onclick={() => refreshPorts(true)} disabled={checkingPorts}>{checkingPorts ? "Checking ports…" : "↻ Check ports"}</button>
+    <div class="filter-tabs" aria-label="Device filters">
+      <button onclick={() => refreshPorts(true)} disabled={checkingPorts}
+        >{checkingPorts ? "Checking ports…" : "↻ Check ports"}</button
+      >
       {#each [{ id: "all", label: "All machines" }, { id: "online", label: "Online" }, { id: "favorites", label: "Favourites" }] as tab}<button
           class:active={filter === tab.id}
           onclick={() => (filter = tab.id)}
@@ -184,13 +240,26 @@
                 size={13}
               />{:else}<Copy size={13} />{/if}</button
           >
+          {#if peer.addresses.includes("100.64.0.6")}<button
+              class="umbrel-web-action mesh-primary"
+              disabled={!peer.online || openingUmbrel}
+              onclick={openUmbrel}
+              >{openingUmbrel ? "Opening Umbrel…" : "Open Umbrel web"}<ArrowUpRight
+                size={16}
+              /></button
+            >{/if}
           <div class="device-actions">
-            <button disabled={!available(peer,"ssh")} title={availabilityTitle(peer,"ssh")} onclick={() => go(name, "ssh")}
-              ><Terminal size={15} /> SSH</button
-            ><button disabled={!available(peer,"vnc")} title={availabilityTitle(peer,"vnc")} onclick={() => go(name, "vnc")}
-              ><Monitor size={15} /> VNC</button
+            <button
+              disabled={!available(peer, "ssh")}
+              title={availabilityTitle(peer, "ssh")}
+              onclick={() => go(name, "ssh")}><Terminal size={15} /> SSH</button
             ><button
-              disabled={!available(peer,"rdp")} title={availabilityTitle(peer,"rdp")}
+              disabled={!available(peer, "vnc")}
+              title={availabilityTitle(peer, "vnc")}
+              onclick={() => go(name, "vnc")}><Monitor size={15} /> VNC</button
+            ><button
+              disabled={!available(peer, "rdp")}
+              title={availabilityTitle(peer, "rdp")}
               onclick={() => go(name, "rdp")}
               aria-label={`Remote desktop to ${name}`}><ArrowUpRight size={16} /> RDP</button
             >

@@ -12,7 +12,7 @@
   } from "lucide-svelte";
   import { netMap } from "$lib/store/ipn";
   import { recent, remember, type Protocol } from "$lib/store/connections";
-  import {portChecks, portKey, checkPort} from "$lib/store/reachability";
+  import { portChecks, portKey, checkPort } from "$lib/store/reachability";
   import SelectNode from "$lib/components/data/node/SelectNode.svelte";
   import Xterm from "$lib/components/connect/Xterm.svelte";
   import NoVnc from "$lib/components/connect/NoVNC.svelte";
@@ -33,8 +33,18 @@
   let elapsed = $state(0);
   const selected = $derived($netMap?.peers.find((p) => p.name.split(".")[0] === hostname));
   const checkHost = $derived(selected?.addresses[0] || hostname);
-  const reachability = $derived($portChecks[portKey(checkHost, proto === "ssh" ? 22 : port)]?.state);
-  $effect(() => {const h=checkHost; const p=proto === "ssh" ? 22 : port; const a=active; if(!a && h){const t=setTimeout(()=>checkPort(h,p),400);return()=>clearTimeout(t);}});
+  const reachability = $derived(
+    $portChecks[portKey(checkHost, proto === "ssh" ? 22 : port)]?.state,
+  );
+  $effect(() => {
+    const h = checkHost;
+    const p = proto === "ssh" ? 22 : port;
+    const a = active;
+    if (!a && h) {
+      const t = setTimeout(() => checkPort(h, p), 400);
+      return () => clearTimeout(t);
+    }
+  });
   let first = true;
   $effect(() => {
     const saved = $recent.find((c) => c.host === hostname && c.proto === proto);
@@ -170,11 +180,26 @@
             </p>{/if}{#if selected && !selected.online}<div class="mesh-error">
               This device is currently offline. Bring it online to connect.
             </div>{/if}
-          {#if hostname && reachability !== "open"}<p class="field-hint">{reachability === "unreachable" ? `Port ${proto === "ssh" ? 22 : port} is unreachable from this browser.` : "Checking port availability…"} <button type="button" class="mesh-text-button" onclick={() => checkPort(checkHost,proto === "ssh" ? 22 : port,true)}>Recheck</button></p>{/if}
-          {#if proto === "ssh" && selected && !selected.tailscaleSSHEnabled}<div class="mesh-error">Tailscale SSH is not enabled on this device.</div>{/if}
+          {#if hostname && reachability !== "open"}<p class="field-hint">
+              {reachability === "unreachable"
+                ? `Port ${proto === "ssh" ? 22 : port} is unreachable from this browser.`
+                : "Checking port availability…"}
+              <button
+                type="button"
+                class="mesh-text-button"
+                onclick={() => checkPort(checkHost, proto === "ssh" ? 22 : port, true)}
+                >Recheck</button
+              >
+            </p>{/if}
+          {#if proto === "ssh" && selected && !selected.tailscaleSSHEnabled}<div class="mesh-error">
+              Tailscale SSH is not enabled on this device.
+            </div>{/if}
           {#if error}<div class="mesh-error" role="alert">{error}</div>{/if}<button
             class="mesh-primary"
-            disabled={!hostname || reachability !== "open" || (selected && (!selected.online || (proto === "ssh" && !selected.tailscaleSSHEnabled)))}
+            disabled={!hostname ||
+              reachability !== "open" ||
+              (selected &&
+                (!selected.online || (proto === "ssh" && !selected.tailscaleSSHEnabled)))}
             >Connect to {hostname || "a machine"}<ArrowUpRight size={18} /></button
           >
           <p class="secure-note">
