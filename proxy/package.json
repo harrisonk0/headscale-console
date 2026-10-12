@@ -10,5 +10,8 @@
     "@types/node": "^24.19.2",
     "typescript": "~5.7.2",
     "wrangler": "4.149.0"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0"
   }
 }

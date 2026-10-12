@@ -14,7 +14,8 @@ native Tailscale apps need raw HTTP upgrades and cannot use this Worker URL.
 Login uses a user-chosen password and a TOTP authenticator code. A private,
 time-limited setup link enrolls the first owner once. Save the recovery codes
 when shown; each can be used once with the password. The password is salted and
-hashed with PBKDF2-SHA256 (600,000 iterations); the authenticator seed is encrypted
+hashed with PBKDF2-SHA256 (600,000 iterations) using a portable implementation
+because Cloudflare production caps its native PBKDF2 at 100,000 rounds; the authenticator seed is encrypted
 at rest. Login is rate limited and accepted TOTP steps cannot be reused.
 
 The approval credential stays in a Worker secret. Sessions use Secure, HttpOnly,
