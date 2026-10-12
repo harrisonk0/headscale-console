@@ -50,7 +50,7 @@
           return;
         }
         channel = raw;
-        client = new RFB(el, raw, { credentials: { username: "", password: "", target: "" } });
+        client = new RFB(el, raw, {});
         client.scaleViewport = true;
         client.resizeSession = true;
         client.addEventListener("connect", () => {
