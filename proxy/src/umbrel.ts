@@ -133,13 +133,28 @@ export default {
         const language = await serveLocale(request, env.ORIGIN, env.UMBREL_BRIDGE_SECRET, ctx);
         if (language) return language;
       }
-      if (port === 80 && url.pathname === "/__remote/network.js")
-        return new Response(networkScript, {
+      if (port === 80 && url.pathname === "/__remote/network.js") {
+        const languageRequest = new Request(new URL("/locales/en.json", url));
+        const language = await serveLocale(
+          languageRequest,
+          env.ORIGIN,
+          env.UMBREL_BRIDGE_SECRET,
+          ctx,
+        );
+        const dictionary = language?.ok ? await language.json() : undefined;
+        const bootstrap = dictionary
+          ? "globalThis.__hkremoteEnglish=" +
+            JSON.stringify(dictionary).replace(/</g, "\\u003c") +
+            ";\n"
+          : "";
+        return new Response(bootstrap + networkScript, {
           headers: {
-            "Content-Type": "application/javascript",
+            "Content-Type": "application/javascript;charset=utf-8",
             "Cache-Control": "private, no-cache",
+            "Referrer-Policy": "no-referrer",
           },
         });
+      }
       if (port === 80 && url.pathname.startsWith("/__remote/socket/")) {
         if (
           request.method !== "POST" ||

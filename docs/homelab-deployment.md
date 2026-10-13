@@ -168,3 +168,10 @@ Translation files are validated as bounded JSON and cached for five minutes
 after session authorization. Regional English requests use Umbrel's actual
 `en.json` dictionary. Missing dictionaries return an error, never the SPA HTML
 shell. `/locales/*` is excluded from Caddy's dashboard HTML handling.
+
+The authenticated bootstrap script also carries the validated, cached English
+dictionary. The browser answers same-origin English locale GET requests from
+that embedded data, so loading English labels requires no `/locales/*` network
+request. Other fetches and language preferences are preserved. Checks used
+Umbrel's actual translation runtime with every locale URL blocked, covering
+English and regional English and confirming zero locale network requests.

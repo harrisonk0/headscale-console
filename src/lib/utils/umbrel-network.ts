@@ -1,3 +1,4 @@
+import "./umbrel-language";
 import { enableHttpsSockets } from "./https-socket";
 
 // Umbrel's authenticated dashboard uses tRPC WebSockets even for ordinary queries.
