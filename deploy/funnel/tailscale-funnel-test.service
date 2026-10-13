@@ -1,0 +1,19 @@
+[Unit]
+Description=Isolated Tailscale Funnel reachability test
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/sbin/tailscaled --tun=userspace-networking --port=0 --statedir=/var/lib/tailscale-funnel-test --state=/var/lib/tailscale-funnel-test/tailscaled.state --socket=/run/tailscale-funnel-test/tailscaled.sock
+Restart=on-failure
+RestartSec=5
+StateDirectory=tailscale-funnel-test
+StateDirectoryMode=0700
+RuntimeDirectory=tailscale-funnel-test
+RuntimeDirectoryMode=0700
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

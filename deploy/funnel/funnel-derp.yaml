@@ -1,0 +1,17 @@
+regions:
+  999:
+    regionid: 999
+    regioncode: hk
+    regionname: HK Cloud through Funnel
+    nodes:
+      - name: hk-funnel
+        regionid: 999
+        hostname: hk-funnel-test.tail7bbf4b.ts.net
+        derpport: 443
+        stunport: -1
+      - name: hk-stun
+        regionid: 999
+        hostname: 145.241.199.87
+        ipv4: 145.241.199.87
+        stunonly: true
+        stunport: 3478

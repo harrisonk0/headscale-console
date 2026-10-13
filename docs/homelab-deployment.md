@@ -175,3 +175,40 @@ that embedded data, so loading English labels requires no `/locales/*` network
 request. Other fetches and language preferences are preserved. Checks used
 Umbrel's actual translation runtime with every locale URL blocked, covering
 English and regional English and confirming zero locale network requests.
+
+## Native clients through Tailscale Funnel
+
+The native custom-control URL is `https://hk-funnel-test.tail7bbf4b.ts.net`.
+An isolated official Tailscale instance on hk-cloud publishes a TLS-terminated
+TCP Funnel on port 443, forwarding the untouched stream to Caddy on loopback
+port 39003. Caddy serves the test message at `/` and forwards Headscale protocol,
+registration, and DERP paths to the existing Headscale process. It publishes no
+Umbrel content or administrative API under this hostname.
+
+The isolated daemon uses its own state directory and socket, userspace
+networking, and disabled DNS/route acceptance. Its service and the loopback
+Caddy route are in `deploy/funnel/`. The existing hk-cloud Headscale node remains
+on its original daemon and keeps its identity. The official Funnel node must
+remain authorized for the gateway to work.
+
+Headscale's canonical `server_url` now uses the Funnel URL, so native enrollment
+links work through it. Its embedded relay remains enabled with client
+verification. Automatic embedded-region advertising is disabled; the custom
+map in `deploy/funnel/funnel-derp.yaml` advertises the Funnel hostname for DERP
+and the existing public IP as a separate STUN-only node. The map is installed
+at `/etc/headscale/funnel-derp.yaml` and referenced in `derp.paths`.
+
+The browser's `relayOriginHost` and the repository's
+`HEADSCALE_RELAY_ORIGIN_HOST` variable also use the Funnel hostname. The WASM
+client still sends its relay traffic through the authenticated Worker bridge,
+whose upstream remains the existing Headscale origin. Reload HK Remote once
+after this configuration change.
+
+Checks passed a native Tailscale HTTP upgrade and encrypted Noise handshake
+without registration (`go run scripts/native-control-check.go URL`), and the
+existing hk-cloud native client's `tailscale debug derp hk` established a DERP
+connection through Funnel. IPv4 STUN remains available on the original public
+IP. The school network's native handshake and data path still need testing on
+the user's device; a reachable test webpage alone does not establish that.
+Funnel imposes non-configurable bandwidth limits. Existing original endpoints
+continue to serve their clients.
