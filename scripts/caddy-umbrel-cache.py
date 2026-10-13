@@ -26,7 +26,7 @@ new='''            request_header -X-HKRemote-Bridge
                 @remote_dashboard_html {
                     method GET HEAD
                     header Accept *text/html*
-                    not path /api/* /assets/* /favicon/* /site.webmanifest /trpc*
+                    not path /api/* /assets/* /locales/* /favicon/* /site.webmanifest /trpc*
                 }
                 handle @remote_dashboard_html {
                     root * /var/cache/umbrel-assets

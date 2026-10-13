@@ -163,3 +163,8 @@ silent failures if the proxy session ends. Other app protocols are unchanged.
 Run `npm run build:network` inside `proxy/` after changing the shared socket
 client; the generated browser script is committed with the Worker. The proxy
 check and deploy scripts regenerate it automatically.
+
+Translation files are validated as bounded JSON and cached for five minutes
+after session authorization. Regional English requests use Umbrel's actual
+`en.json` dictionary. Missing dictionaries return an error, never the SPA HTML
+shell. `/locales/*` is excluded from Caddy's dashboard HTML handling.

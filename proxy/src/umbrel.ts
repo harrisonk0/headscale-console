@@ -1,5 +1,6 @@
 import type { AuthGuard } from "./auth";
 import networkScript from "./umbrel-network";
+import { serveLocale } from "./umbrel-locales";
 
 interface UmbrelEnv {
   AUTH: DurableObjectNamespace<AuthGuard>;
@@ -128,6 +129,10 @@ export default {
           `<!doctype html><html><head><title>Sign in to HK Remote</title></head><body style="font:16px system-ui;padding:40px"><h1>Open this app from HK Remote.</h1><p>Your private session has expired.</p><a href="${env.APP_ORIGIN}">Sign in to HK Remote</a></body></html>`,
           { status: 401, headers: { "Content-Type": "text/html", "Cache-Control": "no-store" } },
         );
+      if (port === 80 && url.pathname.startsWith("/locales/")) {
+        const language = await serveLocale(request, env.ORIGIN, env.UMBREL_BRIDGE_SECRET, ctx);
+        if (language) return language;
+      }
       if (port === 80 && url.pathname === "/__remote/network.js")
         return new Response(networkScript, {
           headers: {
