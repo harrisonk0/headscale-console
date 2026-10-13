@@ -1,5 +1,12 @@
 <script lang="ts">
+  import { forgetBrowserIdentity } from "$lib/store/resume";
+
   function restart() {
+    // This screen is shown when Headscale asks the current machine profile to
+    // authenticate again. Clearing only sessionStorage is insufficient: the
+    // authenticated cross-tab resume cache would restore the same stale key
+    // during the next page load and strand the user on this screen again.
+    forgetBrowserIdentity();
     for (const key of Object.keys(sessionStorage))
       if (key.startsWith("ipn-state-")) sessionStorage.removeItem(key);
     location.reload();
