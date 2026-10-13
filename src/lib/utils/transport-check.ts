@@ -1,3 +1,4 @@
+import { enableHttpsSockets } from "./https-socket";
 import { reportStartup } from "$lib/store/startup-status";
 export type TransportCheck = {
   https: boolean;
@@ -73,15 +74,19 @@ export async function checkBrowserTransport(controlUrl: string): Promise<Transpo
   reportStartup("Checking binary WebSocket traffic");
   const socket = new URL("/__proxy/socket-check", base);
   socket.protocol = base.protocol === "https:" ? "wss:" : "ws:";
-  if (!(await socketCheck(socket.href)))
-    return {
-      https: true,
-      websocket: false,
-      control: false,
-      message:
-        "Sign-in and HTTPS work, but the live WebSocket connection failed. This network or browser may be blocking the connection.",
-    };
-  reportStartup("Binary WebSocket traffic passed", "ok");
+  if (!(await socketCheck(socket.href))) {
+    reportStartup("Browser WebSockets failed; trying the authenticated HTTPS fallback");
+    enableHttpsSockets(controlUrl);
+    if (!(await socketCheck(socket.href)))
+      return {
+        https: true,
+        websocket: false,
+        control: false,
+        message:
+          "The native WebSocket and HTTPS fallback both failed. This network may be blocking the live connection requests.",
+      };
+    reportStartup("Binary traffic passed through HTTPS fallback", "ok");
+  } else reportStartup("Binary WebSocket traffic passed", "ok");
   reportStartup("Checking the Tailscale WebSocket protocol");
   socket.pathname = "/ts2021";
   if (!(await socketCheck(socket.href, "tailscale-control-protocol")))

@@ -116,3 +116,27 @@ version. They contain no passwords, TOTP seeds/codes, auth keys or private node
 keys. Tests covered delayed cold downloads, blocked HTTPS/WebSockets, disabled
 WebAssembly, and real login/reconnect/takeover/logout on a normal network. The
 school's actual filtering behavior still requires an observation on that network.
+
+## Authenticated HTTPS transport fallback
+
+If the binary WebSocket check fails, HK Remote automatically retries using
+first-party HTTPS requests through `/api/remote/socket/*`. The Worker retains
+the upstream control/DERP WebSockets; the browser sends bounded batches and
+receives data through long polling. Sequence numbers and acknowledgements prevent
+duplicate writes or lost reads when requests are retried. The existing Tailscale
+Noise/WireGuard encryption still protects the tunnel traffic.
+
+Every operation requires the password/TOTP session, and each channel belongs to
+that specific session. Destinations are limited to the configured Headscale
+control/DERP endpoints and official numbered Tailscale DERP hosts. Channels expire
+with login, close on logout/page exit, and have idle, queue and connection limits.
+This adds no persistent Tailnet device or additional server. It applies to the
+browser client, not stock native Tailscale applications. Polling can add latency
+and uses more Worker requests than a WebSocket connection.
+
+Checks covered an actual WASM connection with all native browser WebSockets
+disabled, an SSH banner received over the encrypted Tailnet, identical node
+identity after takeover/reopen/reload, and logout cleanup. Hosted checks cover
+authentication, destination restrictions, ordered writes/read replay, session
+isolation and upstream protocol negotiation. The school network must still be
+retried to confirm whether its filter permits this HTTPS fallback.

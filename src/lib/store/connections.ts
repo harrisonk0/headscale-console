@@ -36,15 +36,18 @@ export function connectionUrl(host = "", proto: Protocol = "ssh") {
 export async function endSession() {
   forgetBrowserIdentity();
   try {
-    await Promise.allSettled([
-      window.ipn.logout(),
-      fetch("/api/remote/logout", {
+    // Keep web authorization alive until Tailscale's logout reaches Headscale.
+    // The HTTPS transport needs that authorization to deliver the logout frame.
+    try {
+      await window.ipn.logout();
+    } finally {
+      await fetch("/api/remote/logout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
         credentials: "same-origin",
-      }),
-    ]);
+      });
+    }
   } catch {
     console.warn(
       "The browser session ended locally. Headscale will remove its ephemeral node after the inactivity timeout.",

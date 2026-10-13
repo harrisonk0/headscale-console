@@ -1,3 +1,4 @@
+import { HttpTransport } from "./http-transport";
 import { DurableObject } from "cloudflare:workers";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
@@ -82,8 +83,10 @@ type SessionRow = {
 
 /** One coordinator per owner: atomic OTP consumption and bounded login attempts. */
 export class AuthGuard extends DurableObject<Env> {
+  private transports: HttpTransport;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.transports = new HttpTransport(env.ORIGIN, (token) => this.session(token, "remote"));
     ctx.storage.sql
       .exec(`CREATE TABLE IF NOT EXISTS auth(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT NOT NULL,password_hash TEXT NOT NULL,seed TEXT NOT NULL,last_step INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY CHECK(id=1),seed TEXT NOT NULL,expires INTEGER NOT NULL);
@@ -368,8 +371,26 @@ export class AuthGuard extends DurableObject<Env> {
   async allowUmbrel(token: string) {
     return !!this.session(token, "umbrel");
   }
+  async openTransport(token: string, target: string, protocols: string[]) {
+    return this.transports.open(token, target, protocols);
+  }
+  async readTransport(token: string, id: string, ack: number) {
+    return this.transports.read(token, id, ack);
+  }
+  async writeTransport(
+    token: string,
+    id: string,
+    sequence: number,
+    frames: { kind: "binary" | "text"; data: string }[],
+  ) {
+    return this.transports.write(token, id, sequence, frames);
+  }
+  async closeTransport(token: string, id: string) {
+    return this.transports.close(token, id);
+  }
   async logout(token: string) {
     const hash = digest(token);
+    this.transports.revoke(hash);
     this.ctx.storage.sql.exec("DELETE FROM sessions WHERE hash=? OR parent=?", hash, hash);
     this.ctx.storage.sql.exec("DELETE FROM tickets WHERE parent=?", hash);
     return true;

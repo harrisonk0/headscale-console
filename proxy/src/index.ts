@@ -13,7 +13,7 @@ function cookie(request: Request, name: string) {
 }
 const cookieHeader = (name: string, value: string, seconds = 1800) =>
   `${name}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${seconds}`;
-async function body(request: Request): Promise<Record<string, unknown>> {
+async function body(request: Request, maxBytes = 4096): Promise<Record<string, unknown>> {
   if (!request.headers.get("Content-Type")?.startsWith("application/json"))
     throw new Error("AUTH_400: JSON is required.");
   const reader = request.body?.getReader();
@@ -25,7 +25,7 @@ async function body(request: Request): Promise<Record<string, unknown>> {
     const part = await reader.read();
     if (part.done) break;
     size += part.value.byteLength;
-    if (size > 4096) {
+    if (size > maxBytes) {
       await reader.cancel();
       throw new Error("AUTH_413: Request too large.");
     }
@@ -125,7 +125,34 @@ export default {
           !(origin === env.APP_ORIGIN || origin === "http://localhost:5173")
         )
           return json({ error: "Origin not allowed." }, 403);
-        const b = await body(request);
+        const b = await body(request, action === "socket/write" ? 400000 : 10000);
+        if (action === "socket/open") {
+          const path = text(b.path);
+          const url = new URL(path, env.ORIGIN);
+          if (path !== url.pathname + url.search || path.length > 8192)
+            return json({ error: "Invalid transport path." }, 400);
+          const host = text(b.relayHost);
+          if (host) {
+            if (!/^derp[0-9]+[a-z]*\.tailscale\.com$/.test(host) || url.pathname !== "/derp")
+              return json({ error: "Invalid relay." }, 400);
+            url.hostname = host;
+          }
+          if (!Array.isArray(b.protocols) || b.protocols.some((p) => typeof p !== "string"))
+            return json({ error: "Invalid protocol." }, 400);
+          return json(await auth.openTransport(session, url.href, b.protocols as string[]));
+        }
+        if (action === "socket/read")
+          return json(await auth.readTransport(session, text(b.id), Number(b.ack)));
+        if (action === "socket/write")
+          return json(
+            await auth.writeTransport(
+              session,
+              text(b.id),
+              Number(b.sequence),
+              b.frames as { kind: "binary" | "text"; data: string }[],
+            ),
+          );
+        if (action === "socket/close") return json(await auth.closeTransport(session, text(b.id)));
         if (action === "setup/start") return json(await auth.beginSetup(text(b.setupToken)));
         if (action === "setup/finish") {
           const result = await auth.finishSetup(text(b.setupToken), text(b.password), text(b.code));
