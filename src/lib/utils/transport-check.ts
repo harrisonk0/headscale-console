@@ -76,7 +76,7 @@ export async function checkBrowserTransport(controlUrl: string): Promise<Transpo
   socket.protocol = base.protocol === "https:" ? "wss:" : "ws:";
   if (!(await socketCheck(socket.href))) {
     reportStartup("Browser WebSockets failed; trying the authenticated HTTPS fallback");
-    enableHttpsSockets(controlUrl);
+    enableHttpsSockets(controlUrl, { report: reportStartup });
     if (!(await socketCheck(socket.href)))
       return {
         https: true,

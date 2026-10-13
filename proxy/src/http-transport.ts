@@ -25,6 +25,7 @@ export class HttpTransport {
   constructor(
     private origin: string,
     private authorize: (token: string) => { hash: string; expires: number } | undefined,
+    private umbrelBridge?: string,
   ) {}
   private owner(token: string) {
     const row = this.authorize(token);
@@ -70,7 +71,7 @@ export class HttpTransport {
   async open(token: string, target: string, protocols: string[]) {
     const owner = this.owner(token);
     if (
-      this.channels.size >= 12 ||
+      this.channels.size >= (this.umbrelBridge ? 8 : 12) ||
       [...this.channels.values()].filter((c) => c.parent === owner.hash && !c.closed).length >= 8
     )
       fail(429, "Too many live connections in this browser session.");
@@ -86,23 +87,28 @@ export class HttpTransport {
       url.href.length > 8192
     )
       fail(400, "Invalid transport destination.");
-    if (
-      publicRelay
-        ? url.pathname !== "/derp"
-        : url.origin !== original.origin ||
-          !["/ts2021", "/derp", "/__proxy/socket-check"].includes(url.pathname)
-    )
-      fail(403, "Transport destination is not allowed.");
-    if (
-      protocols.length > 1 ||
-      protocols.some((p) => !["tailscale-control-protocol", "derp"].includes(p))
-    )
-      fail(400, "Unsupported transport protocol.");
-    if (url.pathname === "/ts2021" && protocols[0] !== "tailscale-control-protocol")
-      fail(400, "Control protocol is required.");
-    if (url.pathname === "/derp" && protocols[0] !== "derp")
-      fail(400, "Relay protocol is required.");
-    if (probe && (publicRelay || protocols.length || url.search)) fail(400, "Invalid probe.");
+    if (this.umbrelBridge) {
+      if (url.origin !== original.origin || url.pathname !== "/__hkremote/trpc" || protocols.length)
+        fail(403, "Only the Umbrel dashboard connection is allowed.");
+    } else {
+      if (
+        publicRelay
+          ? url.pathname !== "/derp"
+          : url.origin !== original.origin ||
+            !["/ts2021", "/derp", "/__proxy/socket-check"].includes(url.pathname)
+      )
+        fail(403, "Transport destination is not allowed.");
+      if (
+        protocols.length > 1 ||
+        protocols.some((p) => !["tailscale-control-protocol", "derp"].includes(p))
+      )
+        fail(400, "Unsupported transport protocol.");
+      if (url.pathname === "/ts2021" && protocols[0] !== "tailscale-control-protocol")
+        fail(400, "Control protocol is required.");
+      if (url.pathname === "/derp" && protocols[0] !== "derp")
+        fail(400, "Relay protocol is required.");
+      if (probe && (publicRelay || protocols.length || url.search)) fail(400, "Invalid probe.");
+    }
     // Reserve before external I/O, so concurrent opens cannot bypass limits.
     const id = crypto.randomUUID(),
       c: Channel = {
@@ -127,6 +133,7 @@ export class HttpTransport {
       let protocol = "";
       if (!probe) {
         const headers = new Headers({ Upgrade: "websocket" });
+        if (this.umbrelBridge) headers.set("X-HKRemote-Bridge", this.umbrelBridge);
         if (protocols[0]) headers.set("Sec-WebSocket-Protocol", protocols[0]);
         const response = await fetch(url, {
           headers,
@@ -140,7 +147,7 @@ export class HttpTransport {
         socket.binaryType = "arraybuffer";
         socket.accept();
         protocol = response.headers.get("Sec-WebSocket-Protocol") || "";
-        if (protocol !== protocols[0]) fail(502, "The homelab protocol was not accepted.");
+        if (protocol !== (protocols[0] || "")) fail(502, "The homelab protocol was not accepted.");
         socket.addEventListener("message", (event) => {
           this.enqueue(
             c,

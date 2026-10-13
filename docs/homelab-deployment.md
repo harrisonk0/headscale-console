@@ -140,3 +140,26 @@ identity after takeover/reopen/reload, and logout cleanup. Hosted checks cover
 authentication, destination restrictions, ordered writes/read replay, session
 isolation and upstream protocol negotiation. The school network must still be
 retried to confirm whether its filter permits this HTTPS fallback.
+
+## Umbrel dashboard performance and restricted networks
+
+The private Caddy bridge now reuses the existing `/var/cache/umbrel-assets`
+cache and compressed sidecars maintained by the Umbrel refresh timers.
+`scripts/caddy-umbrel-cache.py` applies that dashboard route after saving a backup;
+validate Caddy with its existing environment and reload it after applying. The
+Worker additionally caches only immutable fingerprinted dashboard assets, after
+checking the private session on every request. Browser asset responses use
+private immutable caching. HTML, APIs, user files and authentication responses
+remain uncached.
+
+Umbrel sends most authenticated dashboard queries and live subscriptions over
+its `/trpc` WebSocket. The dashboard proxy injects the shared HTTPS socket client
+before Umbrel starts, routing only that endpoint through authenticated, bounded
+HTTPS channels. The upstream still requires Umbrel's own single-use WebSocket
+ticket, preserving its login check. Channels are tied to the private Umbrel
+session and revoked on HK Remote logout. A visible reconnect notice replaces
+silent failures if the proxy session ends. Other app protocols are unchanged.
+
+Run `npm run build:network` inside `proxy/` after changing the shared socket
+client; the generated browser script is committed with the Worker. The proxy
+check and deploy scripts regenerate it automatically.

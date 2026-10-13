@@ -1,4 +1,10 @@
-import { reportStartup } from "$lib/store/startup-status";
+type SocketOptions = {
+  apiBase?: string;
+  pathOnly?: string;
+  report?: (message: string, state?: "ok" | "error") => void;
+};
+let apiBase = "/api/remote/socket";
+let reportStartup: NonNullable<SocketOptions["report"]> = () => {};
 
 type Frame = { kind: "binary" | "text"; data: string; seq?: number };
 const encode = (bytes: Uint8Array) => {
@@ -11,7 +17,7 @@ const decode = (data: string) => Uint8Array.from(atob(data), (c) => c.charCodeAt
 async function rpc(action: string, body: unknown, retry = true): Promise<any> {
   for (let attempt = 0; ; attempt++) {
     try {
-      const response = await fetch(`/api/remote/socket/${action}`, {
+      const response = await fetch(`${apiBase}/${action}`, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -205,7 +211,7 @@ class HttpsSocket extends EventTarget {
   releaseOnPageHide() {
     if (this.id)
       navigator.sendBeacon(
-        "/api/remote/socket/close",
+        `${apiBase}/close`,
         new Blob([JSON.stringify({ id: this.id })], { type: "application/json" }),
       );
     this.finish(1000, "Page closed");
@@ -219,9 +225,11 @@ class HttpsSocket extends EventTarget {
 }
 
 let enabled = false;
-export function enableHttpsSockets(controlUrl: string) {
+export function enableHttpsSockets(controlUrl: string, options: SocketOptions = {}) {
   if (enabled) return;
   enabled = true;
+  apiBase = options.apiBase || apiBase;
+  reportStartup = options.report || reportStartup;
   const native = window.WebSocket,
     host = new URL(controlUrl).host;
   const relayHost = (window as Window & { __meshRelayProxy?: string }).__meshRelayProxy;
@@ -229,7 +237,7 @@ export function enableHttpsSockets(controlUrl: string) {
     construct(target, args) {
       const url = new URL(String(args[0]));
       if (
-        url.host === host ||
+        (url.host === host && (!options.pathOnly || url.pathname === options.pathOnly)) ||
         url.host === relayHost ||
         /^derp[0-9]+[a-z]*\.tailscale\.com$/.test(url.hostname)
       ) {

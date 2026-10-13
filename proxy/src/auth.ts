@@ -84,9 +84,15 @@ type SessionRow = {
 /** One coordinator per owner: atomic OTP consumption and bounded login attempts. */
 export class AuthGuard extends DurableObject<Env> {
   private transports: HttpTransport;
+  private umbrelTransports: HttpTransport;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.transports = new HttpTransport(env.ORIGIN, (token) => this.session(token, "remote"));
+    this.umbrelTransports = new HttpTransport(
+      env.ORIGIN,
+      (token) => this.session(token, "umbrel"),
+      env.UMBREL_BRIDGE_SECRET,
+    );
     ctx.storage.sql
       .exec(`CREATE TABLE IF NOT EXISTS auth(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT NOT NULL,password_hash TEXT NOT NULL,seed TEXT NOT NULL,last_step INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY CHECK(id=1),seed TEXT NOT NULL,expires INTEGER NOT NULL);
@@ -388,9 +394,35 @@ export class AuthGuard extends DurableObject<Env> {
   async closeTransport(token: string, id: string) {
     return this.transports.close(token, id);
   }
+  async openUmbrelTransport(token: string, path: string) {
+    const url = new URL(path, this.env.ORIGIN);
+    if (url.pathname !== "/trpc" || path !== url.pathname + url.search || path.length > 8192)
+      throw new AuthError(400, "Invalid Umbrel connection path.");
+    url.pathname = "/__hkremote/trpc";
+    return this.umbrelTransports.open(token, url.href, []);
+  }
+  async readUmbrelTransport(token: string, id: string, ack: number) {
+    return this.umbrelTransports.read(token, id, ack);
+  }
+  async writeUmbrelTransport(
+    token: string,
+    id: string,
+    sequence: number,
+    frames: { kind: "binary" | "text"; data: string }[],
+  ) {
+    return this.umbrelTransports.write(token, id, sequence, frames);
+  }
+  async closeUmbrelTransport(token: string, id: string) {
+    return this.umbrelTransports.close(token, id);
+  }
   async logout(token: string) {
     const hash = digest(token);
     this.transports.revoke(hash);
+    this.umbrelTransports.revoke(hash);
+    for (const child of this.ctx.storage.sql
+      .exec<{ hash: string }>("SELECT hash FROM sessions WHERE parent=?", hash)
+      .toArray())
+      this.umbrelTransports.revoke(child.hash);
     this.ctx.storage.sql.exec("DELETE FROM sessions WHERE hash=? OR parent=?", hash, hash);
     this.ctx.storage.sql.exec("DELETE FROM tickets WHERE parent=?", hash);
     return true;

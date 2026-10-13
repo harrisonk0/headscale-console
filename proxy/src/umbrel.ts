@@ -1,4 +1,5 @@
 import type { AuthGuard } from "./auth";
+import networkScript from "./umbrel-network";
 
 interface UmbrelEnv {
   AUTH: DurableObjectNamespace<AuthGuard>;
@@ -62,7 +63,7 @@ function entryPage(path: string) {
   );
 }
 export default {
-  async fetch(request: Request, env: UmbrelEnv): Promise<Response> {
+  async fetch(request: Request, env: UmbrelEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url),
       port = Number(env.UMBREL_PORT),
       origin = request.headers.get("Origin");
@@ -127,6 +128,88 @@ export default {
           `<!doctype html><html><head><title>Sign in to HK Remote</title></head><body style="font:16px system-ui;padding:40px"><h1>Open this app from HK Remote.</h1><p>Your private session has expired.</p><a href="${env.APP_ORIGIN}">Sign in to HK Remote</a></body></html>`,
           { status: 401, headers: { "Content-Type": "text/html", "Cache-Control": "no-store" } },
         );
+      if (port === 80 && url.pathname === "/__remote/network.js")
+        return new Response(networkScript, {
+          headers: {
+            "Content-Type": "application/javascript",
+            "Cache-Control": "private, no-cache",
+          },
+        });
+      if (port === 80 && url.pathname.startsWith("/__remote/socket/")) {
+        if (
+          request.method !== "POST" ||
+          origin !== url.origin ||
+          !request.headers.get("Content-Type")?.startsWith("application/json")
+        )
+          return json({ error: "Origin not allowed." }, 403);
+        const reader = request.body?.getReader();
+        if (!reader) return json({ error: "Missing request." }, 400);
+        const decoder = new TextDecoder();
+        let payload = "",
+          size = 0;
+        while (true) {
+          const part = await reader.read();
+          if (part.done) break;
+          size += part.value.byteLength;
+          if (size > 400000) {
+            await reader.cancel();
+            return json({ error: "Request too large." }, 413);
+          }
+          payload += decoder.decode(part.value, { stream: true });
+        }
+        let b: Record<string, unknown>;
+        try {
+          b = JSON.parse(payload + decoder.decode());
+          if (!b || typeof b !== "object" || Array.isArray(b)) throw new Error();
+        } catch {
+          return json({ error: "Invalid request." }, 400);
+        }
+        const token = session(request),
+          id = typeof b.id === "string" ? b.id : "";
+        switch (url.pathname.slice("/__remote/socket/".length)) {
+          case "open":
+            if (typeof b.path !== "string" || !Array.isArray(b.protocols) || b.protocols.length)
+              return json({ error: "Invalid connection." }, 400);
+            return json(await auth.openUmbrelTransport(token, b.path));
+          case "read":
+            return json(await auth.readUmbrelTransport(token, id, Number(b.ack)));
+          case "write":
+            return json(
+              await auth.writeUmbrelTransport(
+                token,
+                id,
+                Number(b.sequence),
+                b.frames as { kind: "binary" | "text"; data: string }[],
+              ),
+            );
+          case "close":
+            return json(await auth.closeUmbrelTransport(token, id));
+          default:
+            return json({ error: "Unknown connection action." }, 404);
+        }
+      }
+      // Authenticate before consulting the shared cache. Only fingerprinted dashboard
+      // build assets are eligible; HTML, APIs and user files never enter this cache.
+      const immutableAsset =
+        port === 80 &&
+        request.method === "GET" &&
+        !url.search &&
+        /^\/assets\/[A-Za-z0-9_./-]*-[A-Za-z0-9_-]{8,}\.(?:js|css|woff2|svg|png|webp|ico)$/.test(
+          url.pathname,
+        );
+      const cacheKey = new Request(url.href);
+      const assetCache = immutableAsset
+        ? await caches.open("hkremote-umbrel-assets-v1")
+        : undefined;
+      if (immutableAsset) {
+        const cached = await assetCache!.match(cacheKey);
+        if (cached) {
+          const headers = new Headers(cached.headers);
+          headers.set("Cache-Control", "private, max-age=31536000, immutable");
+          headers.set("X-HKRemote-Cache", "HIT");
+          return new Response(cached.body, { status: cached.status, headers });
+        }
+      }
       if (port === 80 && url.pathname === "/__remote/app-launch.js")
         return new Response(launcher, {
           headers: { "Content-Type": "application/javascript", "Cache-Control": "no-store" },
@@ -152,7 +235,12 @@ export default {
           (v) => !v.trim().startsWith(cookieName + "=") && !v.trim().startsWith("__Host-hkremote="),
         )
         .join(";");
-      if (cookies) upstream.set("Cookie", cookies);
+      if (immutableAsset) {
+        upstream.delete("Cookie");
+        upstream.delete("Authorization");
+        upstream.delete("If-None-Match");
+        upstream.delete("If-Modified-Since");
+      } else if (cookies) upstream.set("Cookie", cookies);
       else upstream.delete("Cookie");
       if (port !== 80) upstream.set("X-HKRemote-Port", String(port));
       else upstream.delete("X-HKRemote-Port");
@@ -170,7 +258,23 @@ export default {
       );
       if (response.status === 101) return response;
       const out = new Headers(response.headers);
-      out.set("Cache-Control", "no-store");
+      const cacheableAsset =
+        immutableAsset &&
+        response.status === 200 &&
+        !out.has("Set-Cookie") &&
+        (out.get("Cache-Control") || "").includes("immutable") &&
+        /(?:javascript|css|font|image)/.test(out.get("Content-Type") || "");
+      if (cacheableAsset) {
+        const cachedHeaders = new Headers(out);
+        cachedHeaders.set("Cache-Control", "public, max-age=31536000, immutable");
+        ctx.waitUntil(
+          assetCache!
+            .put(cacheKey, new Response(response.clone().body, { headers: cachedHeaders }))
+            .catch(() => {}),
+        );
+        out.set("Cache-Control", "private, max-age=31536000, immutable");
+        out.set("X-HKRemote-Cache", "MISS");
+      } else out.set("Cache-Control", "no-store");
       out.set("Referrer-Policy", "no-referrer");
       const location = out.get("Location");
       if (location) {
@@ -223,7 +327,10 @@ export default {
         result = new HTMLRewriter()
           .on("head", {
             element(e) {
-              e.prepend('<script src="/__remote/app-launch.js"></script>', { html: true });
+              e.prepend(
+                '<script src="/__remote/network.js"></script><script src="/__remote/app-launch.js"></script>',
+                { html: true },
+              );
             },
           })
           .transform(result);
