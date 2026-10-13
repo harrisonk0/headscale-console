@@ -1,6 +1,20 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { reportStartup } from "$lib/store/startup-status";
+  import ConnectionStatus from "$lib/components/ConnectionStatus.svelte";
   import { forgetBrowserIdentity } from "$lib/store/resume";
 
+  const resuming = !!window.ipnProfiles.currentProfile;
+  onMount(() => {
+    const timer = setTimeout(
+      () =>
+        reportStartup(
+          "Tailscale registration has not finished after 30 seconds; use the completed checks above to locate the interruption",
+        ),
+      30000,
+    );
+    return () => clearTimeout(timer);
+  });
   function restart() {
     // This screen is shown when Headscale asks the current machine profile to
     // authenticate again. Clearing only sessionStorage is insufficient: the
@@ -16,11 +30,14 @@
 <main class="mesh-login">
   <section class="session-card">
     <p class="eyebrow">TEMPORARY SESSION</p>
-    <h2>Joining your homelab…</h2>
+    <h2>{resuming ? "Reconnecting your browser device…" : "Registering your browser device…"}</h2>
     <p>
-      Your browser is connecting with its one-use ephemeral key. If your previous session was
-      removed or its key expired, start a fresh one.
+      Waiting for Tailscale to finish connecting. The live status below shows which stages
+      succeeded. Retry this connection to keep the same device, or start fresh if its session has
+      been removed or expired.
     </p>
+    <ConnectionStatus />
+    <button class="mesh-primary" onclick={() => location.reload()}>Retry this connection</button>
     <button class="mesh-secondary" onclick={restart}>Start a fresh session</button>
   </section>
 </main>

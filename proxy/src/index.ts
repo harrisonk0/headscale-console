@@ -83,6 +83,30 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
       if (url.pathname === "/__proxy/status")
         return json({ ok: true, transport: "websocket", version: 2 });
+      if (url.pathname === "/__proxy/socket-check") {
+        if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
+          return json({ error: "WebSocket required." }, 426);
+        const pair = new WebSocketPair();
+        pair[1].binaryType = "arraybuffer";
+        pair[1].accept();
+        const probeTimeout = setTimeout(() => pair[1].close(1000, "Probe timed out"), 8000);
+        pair[1].addEventListener("close", () => clearTimeout(probeTimeout));
+        pair[1].addEventListener("message", (event) => {
+          clearTimeout(probeTimeout);
+          if (typeof event.data === "string" || event.data.byteLength !== 4) {
+            pair[1].close(1008, "Invalid probe");
+            return;
+          }
+          const bytes = new Uint8Array(event.data);
+          if (bytes[0] !== 72 || bytes[1] !== 75 || bytes[2] !== 82 || bytes[3] !== 77) {
+            pair[1].close(1008, "Invalid probe");
+            return;
+          }
+          pair[1].send(event.data);
+          pair[1].close(1000, "Probe complete");
+        });
+        return new Response(null, { status: 101, webSocket: pair[0] });
+      }
       if (url.pathname === "/__remote/umbrel-entry") return entryPage();
       if (url.pathname === "/__remote/umbrel-open") {
         if (request.method !== "POST" || origin !== url.origin)

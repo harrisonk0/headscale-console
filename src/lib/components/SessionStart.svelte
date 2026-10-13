@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { ShieldCheck, ArrowRight, Globe, Copy, Download } from "lucide-svelte";
+  import ConnectionStatus from "$lib/components/ConnectionStatus.svelte";
+  import { reportStartup } from "$lib/store/startup-status";
   import Qr from "$lib/components/qrcode/qr.svelte";
   let {
     onReady,
@@ -11,7 +13,7 @@
     onReady: (key: string) => void;
     setupToken?: string;
     needsNode?: boolean;
-    prepareSession?: () => Promise<boolean>;
+    prepareSession?: (progress: (message: string) => void) => Promise<boolean>;
   } = $props();
   let password = $state(""),
     confirm = $state(""),
@@ -22,7 +24,10 @@
     recoveryMode = $state(false),
     busy = $state(false),
     error = $state("");
-  let stage = $state<"loading" | "login" | "setup" | "recovery" | "unconfigured">("loading");
+  let progress = $state("Preparing your connection…");
+  let stage = $state<"loading" | "login" | "setup" | "recovery" | "unconfigured" | "connection">(
+    "loading",
+  );
   async function post(path: string, data: Record<string, unknown>) {
     const r = await fetch(`/api/remote/${path}`, {
       method: "POST",
@@ -38,12 +43,32 @@
   async function enter() {
     busy = true;
     error = "";
+    stage = "connection";
     try {
-      const createNode = prepareSession ? await prepareSession() : needsNode;
+      const createNode = prepareSession
+        ? await prepareSession((message) => {
+            progress = message;
+          })
+        : needsNode;
+      progress = createNode
+        ? "Approving your temporary session…"
+        : "Reconnecting your existing session…";
+      reportStartup(
+        createNode
+          ? "Requesting a one-use temporary-device key"
+          : "Reusing the existing device identity",
+      );
       const b = createNode ? await post("join", {}) : { authKey: "" };
+      reportStartup(
+        createNode
+          ? "Temporary-device key issued; starting connection"
+          : "Saved device identity restored",
+        "ok",
+      );
       onReady(b.authKey);
     } catch (e) {
       error = e instanceof Error ? e.message : "Could not start the session.";
+      reportStartup(error, "error");
       busy = false;
     }
   }
@@ -83,6 +108,10 @@
     busy = true;
     error = "";
     try {
+      if (stage === "connection") {
+        await enter();
+        return;
+      }
       if (stage === "setup") {
         if (password !== confirm) throw new Error("The passwords don’t match.");
         const b = await post("setup/finish", { setupToken, password, code });
@@ -149,6 +178,19 @@
     <form class="session-card" onsubmit={submit}>
       <span class="session-badge"><ShieldCheck size={14} /> Private by design</span>
       {#if stage === "loading"}<h2>Checking your private lane…</h2>
+      {:else if stage === "connection"}<h2>
+          {error ? "Connection interrupted." : "Opening your homelab…"}
+        </h2>
+        <p>{progress}</p>
+        <ConnectionStatus />
+        {#if busy}<div class="mesh-loading-bar" aria-hidden="true"></div>{:else}
+          <button type="button" class="mesh-primary" onclick={enter}
+            >Try the connection again</button
+          >
+          <button type="button" class="mesh-text-button" onclick={() => location.reload()}
+            >Reload and sign in again</button
+          >
+        {/if}
       {:else if stage === "unconfigured"}<h2>
           {error ? "Couldn’t connect." : "Ready for your setup."}
         </h2>

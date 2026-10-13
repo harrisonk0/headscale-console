@@ -1,7 +1,7 @@
 import { ModeWatcher } from "mode-watcher";
 import { mount, unmount } from "svelte";
 
-import { createClient, IpnEventHandler } from "$package/tailscale";
+import { createClient, prepareClient, IpnEventHandler } from "$package/tailscale";
 
 import { Toaster } from "$lib/components/ui/sonner";
 
@@ -25,6 +25,8 @@ import Critical from "./Critical.svelte";
 import { restoreBrowserIdentity } from "$lib/store/resume";
 import { claimBrowserSession } from "$lib/store/session-lease";
 import SessionInUse from "$lib/components/SessionInUse.svelte";
+import { checkBrowserTransport } from "$lib/utils/transport-check";
+import { reportStartup } from "$lib/store/startup-status";
 import SessionStart from "$lib/components/SessionStart.svelte";
 
 declare global {
@@ -52,6 +54,7 @@ declare global {
   });
 
   registerServiceWorker();
+  reportStartup("Website loaded", "ok");
 
   if (!window.navigator.onLine) {
     await unmount(loadingScreen);
@@ -72,6 +75,9 @@ declare global {
     history.replaceState(null, "", location.pathname + location.hash);
   Object.assign(window, { ipnProfiles: loadIpnProfiles() });
   const cfg = await loadAppConfig();
+  // Warm the public WASM download while the user signs in. No join key exists yet.
+  void prepareClient().catch(() => {});
+  let transportReady = false;
   const transport = cfg as typeof cfg & { relayProxyHost?: string; relayOriginHost?: string };
   Object.assign(window, {
     __meshRelayProxy: transport.relayProxyHost || "",
@@ -79,7 +85,7 @@ declare global {
   });
   const setupToken = new URLSearchParams(location.hash.split("?")[1] || "").get("setup") || "";
   if (setupToken) history.replaceState(null, "", location.pathname + "#/setup");
-  async function prepareSession() {
+  async function prepareSession(progress: (message: string) => void = () => {}) {
     const r = await fetch("/api/remote/status", {
       credentials: "same-origin",
       cache: "no-store",
@@ -89,6 +95,27 @@ declare global {
     const status = await r.json();
     if (!status.authenticated || !status.resumeKey)
       throw new Error("Sign in again to restore your session.");
+    reportStartup("Web login accepted", "ok");
+    progress("Loading the browser networking client…");
+    reportStartup("Downloading and compiling the browser client");
+    try {
+      await prepareClient();
+    } catch {
+      throw new Error(
+        "The browser networking client could not load. This network or browser may be blocking the download or WebAssembly.",
+      );
+    }
+    reportStartup("Browser client is ready", "ok");
+    if (!transportReady) {
+      progress("Checking the live homelab connection…");
+      const result = await checkBrowserTransport(cfg.controlUrl);
+      if (!result.control) {
+        reportStartup(result.message, "error");
+        throw new Error(result.message);
+      }
+      transportReady = true;
+    }
+    progress("Restoring your temporary browser session…");
     await claimBrowserSession(
       (move) =>
         new Promise<void>((resolve) => {
@@ -105,21 +132,12 @@ declare global {
         }),
     );
     await restoreBrowserIdentity(status.resumeKey, status.expiresAt);
+    reportStartup("Browser session ownership acquired", "ok");
     Object.assign(window, { ipnProfiles: loadIpnProfiles() });
     return !window.ipnProfiles.currentProfile;
   }
-  let authenticated = false;
-  try {
-    const r = await fetch("/api/remote/status", {
-      credentials: "same-origin",
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    });
-    if (r.ok) authenticated = (await r.json()).authenticated;
-  } catch {}
-  if (authenticated) await prepareSession();
   let sessionAuthKey: string | undefined;
-  if (setupToken || !authenticated || !window.ipnProfiles.currentProfile) {
+  {
     await unmount(loadingScreen!);
     loadingScreen = undefined;
     sessionAuthKey = await new Promise<string>((resolve) => {
@@ -142,6 +160,7 @@ declare global {
     history.replaceState(null, "", location.pathname + "#/");
   loadUserSettings(cfg.defaults);
 
+  reportStartup("Starting Tailscale in this browser");
   Object.assign(window, {
     ipnEventHandler: new IpnEventHandler(),
     ipn: await createClient({
@@ -170,6 +189,18 @@ declare global {
 
   window.ipnEventHandler.addEventListener(window.ipnEventHandler.Events.state, async (ev) => {
     console.info("state:", ev.detail.state);
+    const labels: Record<IPNState, string> = {
+      NoState: "Tailscale initialized",
+      InUseOtherUser: "Tailscale is waiting for session ownership",
+      NeedsLogin: sessionAuthKey
+        ? "Registering the temporary browser device"
+        : "Reconnecting the saved browser device",
+      NeedsMachineAuth: "Waiting for device approval",
+      Stopped: "Tailscale stopped",
+      Starting: "Connecting to the coordination server",
+      Running: "Connected to your homelab",
+    };
+    reportStartup(labels[ev.detail.state], ev.detail.state === "Running" ? "ok" : "working");
     switch (ev.detail.state) {
       case "NeedsLogin":
         if (stopped) break;
@@ -233,6 +264,7 @@ declare global {
     try {
       if (typeof ev.detail.netMapStr !== "string") return;
       netMap.set(JSON.parse(ev.detail.netMapStr));
+      reportStartup("Device list received", "ok");
     } catch (err) {
       console.error(err);
       toast.error(`Failed to parse NetMap: ${err?.toString()}`);

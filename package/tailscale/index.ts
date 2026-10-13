@@ -19,18 +19,27 @@ export interface IPNPackageConfig extends IPNConfig {
   panicHandler: (err: string) => void;
 }
 
+let preparedModule: Promise<WebAssembly.Module> | undefined;
+
+/** Download/compile the public client before minting a short-lived join key. */
+export function prepareClient() {
+  if (!preparedModule) {
+    preparedModule = Promise.resolve()
+      .then(() => WebAssembly.compileStreaming(fetch(wasmUrl)))
+      .catch((error) => {
+        preparedModule = undefined;
+        throw error;
+      });
+  }
+  return preparedModule;
+}
+
 export async function createClient(opt: IPNPackageConfig) {
   const go = new Go();
-
-  const wasmInstance = await WebAssembly.instantiateStreaming(
-    fetch(wasmUrl),
-    go.importObject,
-  );
+  const wasmInstance = await WebAssembly.instantiate(await prepareClient(), go.importObject);
 
   // The Go process should never exit, if it does then it's an unhandled panic.
-  go.run(wasmInstance.instance).then(() =>
-    opt.panicHandler("Unexpected shutdown"),
-  );
+  go.run(wasmInstance).then(() => opt.panicHandler("Unexpected shutdown"));
 
   return newIPN({
     stateStorage: IpnStateStorage,

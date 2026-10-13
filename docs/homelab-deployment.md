@@ -95,3 +95,24 @@ They never contain the Headscale token or the user’s password. Logout revokes
 all child app sessions. Since the Umbrel dashboard origin has changed, its own
 login may be required once more. Existing Vaultwarden passkeys are bound to its
 original domain; password login works on the proxy origin.
+
+## Startup and restricted-network diagnostics
+
+The public Go WASM module is downloaded and compiled while the login gate is
+open. A new ephemeral join key is requested only after that work and transport
+checks finish, so the two-minute key lifetime is not consumed by a first-time
+client download. Existing identities still reconnect without another key.
+
+Startup shows elapsed stages for authentication, client preparation, direct
+Worker HTTPS, binary WebSocket traffic, the Tailscale WebSocket subprotocol,
+identity restoration, registration and receiving the device list. The public
+socket probe accepts only a fixed four-byte payload and closes after eight
+seconds. The Tailscale subprotocol probe opens/closes without registering a node;
+it verifies protocol negotiation, not the entire encrypted Noise exchange.
+
+A blocked transport fails before requesting a join key. Diagnostics copied by
+the user contain only these stages, elapsed times, app version and browser
+version. They contain no passwords, TOTP seeds/codes, auth keys or private node
+keys. Tests covered delayed cold downloads, blocked HTTPS/WebSockets, disabled
+WebAssembly, and real login/reconnect/takeover/logout on a normal network. The
+school's actual filtering behavior still requires an observation on that network.
