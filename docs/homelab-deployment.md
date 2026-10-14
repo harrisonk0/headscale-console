@@ -212,3 +212,14 @@ IP. The school network's native handshake and data path still need testing on
 the user's device; a reachable test webpage alone does not establish that.
 Funnel imposes non-configurable bandwidth limits. Existing original endpoints
 continue to serve their clients.
+
+## Advisory connection checks
+
+SSH/VNC/RDP availability checks run inside the private tunnel, with a 15-second
+attempt and one retry for uncertain failures. A refused connection is distinct
+from a timeout or an unknown error. The connection form permits a real attempt
+while checking or after a failed check, and shows the probe's technical details.
+Offline/expired devices and hosts without Tailscale SSH remain unavailable.
+A browser check verified that two timed-out probes leave the connection button
+enabled and that it starts the selected SSH host/user; no Tailnet enrollment was
+needed for this UI check.

@@ -33,9 +33,8 @@
   let elapsed = $state(0);
   const selected = $derived($netMap?.peers.find((p) => p.name.split(".")[0] === hostname));
   const checkHost = $derived(selected?.addresses[0] || hostname);
-  const reachability = $derived(
-    $portChecks[portKey(checkHost, proto === "ssh" ? 22 : port)]?.state,
-  );
+  const portResult = $derived($portChecks[portKey(checkHost, proto === "ssh" ? 22 : port)]);
+  const reachability = $derived(portResult?.state);
   $effect(() => {
     const h = checkHost;
     const p = proto === "ssh" ? 22 : port;
@@ -73,6 +72,15 @@
     elapsed = 0;
     generation++;
     active = true;
+  }
+  function connectionErrorMessage(message: string) {
+    if (message.includes("attempted methods [none]") || message.includes("tailnet policy"))
+      return "The machine rejected Tailscale SSH. Check that SSH is enabled, the account exists, and Headscale permits your session.";
+    if (/timeout|timed out|deadline/i.test(message))
+      return "The private connection timed out. Check the tunnel status and retry.";
+    if (/connection refused|actively refused/i.test(message))
+      return "The machine refused the connection. Check that its remote-access service is running.";
+    return message;
   }
   function back() {
     window.appRouter.goto(new URL("#/", location.href));
@@ -181,26 +189,40 @@
               This device is currently offline. Bring it online to connect.
             </div>{/if}
           {#if hostname && reachability !== "open"}<p class="field-hint">
-              {reachability === "unreachable"
-                ? `Port ${proto === "ssh" ? 22 : port} is unreachable from this browser.`
-                : "Checking port availability…"}
+              {reachability === "timeout"
+                ? "The connection check timed out. You can still try connecting."
+                : reachability === "closed"
+                  ? `Port ${proto === "ssh" ? 22 : port} refused the check. You can still try connecting.`
+                  : reachability === "unknown"
+                    ? "The connection could not be verified. You can still try connecting."
+                    : "Checking the private connection… You can connect while this runs."}
               <button
                 type="button"
                 class="mesh-text-button"
                 onclick={() => checkPort(checkHost, proto === "ssh" ? 22 : port, true)}
-                >Recheck</button
+                disabled={reachability === "checking"}
+                >{reachability === "checking" ? "Checking…" : "Recheck"}</button
               >
-            </p>{/if}
+            </p>
+            {#if portResult?.reason}<details class="field-hint">
+                <summary>Check details</summary>
+                <p>{portResult.reason}</p>
+              </details>{/if}
+          {/if}
           {#if proto === "ssh" && selected && !selected.tailscaleSSHEnabled}<div class="mesh-error">
               Tailscale SSH is not enabled on this device.
             </div>{/if}
           {#if error}<div class="mesh-error" role="alert">{error}</div>{/if}<button
             class="mesh-primary"
             disabled={!hostname ||
-              reachability !== "open" ||
               (selected &&
-                (!selected.online || (proto === "ssh" && !selected.tailscaleSSHEnabled)))}
-            >Connect to {hostname || "a machine"}<ArrowUpRight size={18} /></button
+                (!selected.online ||
+                  selected.expired ||
+                  (proto === "ssh" && !selected.tailscaleSSHEnabled)))}
+            >{["timeout", "unknown", "closed"].includes(reachability || "")
+              ? "Connect anyway to"
+              : "Connect to"}
+            {hostname || "a machine"}<ArrowUpRight size={18} /></button
           >
           <p class="secure-note">
             <ShieldCheck size={14} /> Encrypted through your private network
@@ -223,9 +245,7 @@
         >
           <strong>Connection needs attention</strong>
           <p>
-            {error.includes("attempted methods [none]") || error.includes("tailnet policy")
-              ? "The machine rejected Tailscale SSH. Check that SSH is enabled, the account exists, and Headscale permits your session."
-              : error}
+            {connectionErrorMessage(error)}
           </p>
           <details>
             <summary>Technical details</summary>

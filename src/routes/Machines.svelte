@@ -39,7 +39,7 @@
       peer.online &&
       !peer.expired &&
       (protocol !== "ssh" || peer.tailscaleSSHEnabled) &&
-      $portChecks[portKey(peer.addresses[0], protocolPort[protocol])]?.state === "open"
+      $portChecks[portKey(peer.addresses[0], protocolPort[protocol])]?.state !== "closed"
     );
   }
   function availabilityTitle(peer: IPNNetMapPeerNode, protocol: Protocol) {
@@ -48,9 +48,11 @@
     const state = $portChecks[portKey(peer.addresses[0], protocolPort[protocol])]?.state;
     return state === "open"
       ? `Port ${protocolPort[protocol]} is reachable`
-      : state === "unreachable"
-        ? `Port ${protocolPort[protocol]} is unreachable from this browser`
-        : "Checking port availability…";
+      : state === "closed"
+        ? `Port ${protocolPort[protocol]} refused the connection`
+        : state === "checking"
+          ? "Checking the private connection; you can click to connect"
+          : "Connection not verified; click to try connecting";
   }
   let openingUmbrel = $state(false);
   let webError = $state("");
@@ -178,7 +180,7 @@
     <div class="device-toolbar">
       <div>
         <h2>Your machines <span>{visible.length}</span></h2>
-        <p>Ports are checked from this browser. Unavailable connections are greyed out.</p>
+        <p>Connection checks are advisory. You can try connecting if a check times out.</p>
       </div>
       <label class="mesh-search"
         ><Search size={17} /><input
