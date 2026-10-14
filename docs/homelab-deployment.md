@@ -223,3 +223,15 @@ Offline/expired devices and hosts without Tailscale SSH remain unavailable.
 A browser check verified that two timed-out probes leave the connection button
 enabled and that it starts the selected SSH host/user; no Tailnet enrollment was
 needed for this UI check.
+
+## Browser relay selection and socket lifetime
+
+The pinned browser DERP path selects the first region node without checking
+`STUNOnly`. The browser build adapter removes NAT-discovery-only entries before
+handing the relay map to its transport; these entries remain in the native map.
+The actual Funnel relay is then aliased to the Worker, preserving HTTPS-only
+browser connectivity instead of attempting the STUN server's public IP.
+
+Upstream socket establishment has a ten-second deadline, cancelled as soon as
+its HTTP upgrade completes. Login expiry and idle limits govern the established
+channel; the setup deadline must not abort an active control or relay socket.

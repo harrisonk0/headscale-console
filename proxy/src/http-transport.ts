@@ -135,11 +135,20 @@ export class HttpTransport {
         const headers = new Headers({ Upgrade: "websocket" });
         if (this.umbrelBridge) headers.set("X-HKRemote-Bridge", this.umbrelBridge);
         if (protocols[0]) headers.set("Sec-WebSocket-Protocol", protocols[0]);
-        const response = await fetch(url, {
-          headers,
-          redirect: "manual",
-          signal: AbortSignal.timeout(10000),
-        });
+        // Bound establishment only. A signal that aborts ten seconds later can
+        // also tear down the upgraded socket and interrupt a live session.
+        const controller = new AbortController();
+        const openTimeout = setTimeout(() => controller.abort(), 10000);
+        let response: Response;
+        try {
+          response = await fetch(url, {
+            headers,
+            redirect: "manual",
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(openTimeout);
+        }
         if (response.status !== 101 || !response.webSocket)
           fail(502, "The homelab live connection could not be opened.");
         const socket = response.webSocket;

@@ -22,8 +22,16 @@ adapter = '''
 	if proxy.Type() == js.TypeString && origin.Type() == js.TypeString && proxy.String() != "" && st.NetMap != nil && st.NetMap.DERPMap != nil {
 		nm := *st.NetMap
 		nm.DERPMap = nm.DERPMap.Clone()
-		for _, region := range nm.DERPMap.Regions {
+		skippedSTUN := 0
+		for id, region := range nm.DERPMap.Regions {
+			// The JavaScript DERP dialer selects Nodes[0] without checking
+			// STUNOnly. Browser clients cannot use UDP STUN endpoints.
+			nodes := region.Nodes[:0]
 			for _, node := range region.Nodes {
+				if node == nil || node.STUNOnly {
+					skippedSTUN++
+					continue
+				}
 				if node.HostName == origin.String() {
 					node.HostName = proxy.String()
 					node.CertName = ""
@@ -31,7 +39,15 @@ adapter = '''
 					node.DERPPort = 443
 					node.STUNPort = -1
 				}
+				nodes = append(nodes, node)
 			}
+			region.Nodes = nodes
+			if len(nodes) == 0 {
+				delete(nm.DERPMap.Regions, id)
+			}
+		}
+		if skippedSTUN > 0 {
+			b.logf("browser DERP adapter: skipped %d STUN-only endpoint(s)", skippedSTUN)
 		}
 		st.NetMap = &nm
 	}
