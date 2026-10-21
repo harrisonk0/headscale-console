@@ -2,7 +2,11 @@
 http://:39003 {
     bind 127.0.0.1
     respond / "Hello World! The Tailscale Funnel test page is reachable." 200
-    @headscale_protocol path /key /ts2021 /machine/* /register/* /health /derp /derp/*
+    @current_relay path /derp /derp/*
+    handle @current_relay {
+        reverse_proxy 127.0.0.1:33445
+    }
+    @headscale_protocol path /key /ts2021 /machine/* /register/* /health
     handle @headscale_protocol {
         reverse_proxy 127.0.0.1:8080
     }

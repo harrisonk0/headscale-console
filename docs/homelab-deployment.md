@@ -181,8 +181,9 @@ English and regional English and confirming zero locale network requests.
 The native custom-control URL is `https://hk-funnel-test.tail7bbf4b.ts.net`.
 An isolated official Tailscale instance on hk-cloud publishes a TLS-terminated
 TCP Funnel on port 443, forwarding the untouched stream to Caddy on loopback
-port 39003. Caddy serves the test message at `/` and forwards Headscale protocol,
-registration, and DERP paths to the existing Headscale process. It publishes no
+port 39003. Caddy serves the test message at `/` and forwards Headscale protocol and
+registration paths to the existing Headscale process. Relay paths use the
+standalone DERP process on loopback port 33445, also exposed on Funnel port 8443. It publishes no
 Umbrel content or administrative API under this hostname.
 
 The isolated daemon uses its own state directory and socket, userspace
@@ -235,3 +236,19 @@ browser connectivity instead of attempting the STUN server's public IP.
 Upstream socket establishment has a ten-second deadline, cancelled as soon as
 its HTTP upgrade completes. Login expiry and idle limits govern the established
 channel; the setup deadline must not abort an active control or relay socket.
+
+## Keep browser and native relay routes aligned
+
+The current native DERP map advertises the standalone relay on Funnel port
+8443 (loopback 33445). The Worker's fixed Headscale origin and the port-443
+Funnel alias must send `/derp` and `/derp/*` to that same process. Sending the
+browser to Headscale's separate embedded DERP process creates two isolated
+relays with the same region ID: control login and device lists work, but peer
+SSH/VNC connections time out.
+
+`scripts/align-caddy-relay.py` adds that route to both aliases after saving
+backups. Validate Caddy using its existing environment and reload afterward.
+The browser Worker bridge, native port-8443 endpoint, and port-443 alias were
+checked to return the same DERP greeting fingerprint; the greetings differed
+before alignment. The published WASM also contains the STUN-only filter.
+No new Tailnet clients were enrolled for these checks.

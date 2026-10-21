@@ -7,7 +7,7 @@ regions:
       - name: hk-funnel
         regionid: 999
         hostname: hk-funnel-test.tail7bbf4b.ts.net
-        derpport: 443
+        derpport: 8443
         stunport: -1
       - name: hk-stun
         regionid: 999
