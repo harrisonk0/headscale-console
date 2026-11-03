@@ -1,8 +1,9 @@
-FROM alpine:3.22 AS compat
+ARG ALPINE_VERSION=3.17
+FROM alpine:${ALPINE_VERSION} AS compat
 RUN apk add --no-cache build-base
 COPY compat.c /compat.c
 RUN cc -shared -fPIC -O2 -Wall -Wextra /compat.c -o /libhk-compat.so -ldl
-FROM alpine:3.22
+FROM alpine:${ALPINE_VERSION}
 RUN apk add --no-cache alpine-base eudev udev-init-scripts-openrc \
     xorg-server xf86-input-libinput xrandr xev dbus dbus-openrc \
     lightdm lightdm-openrc lightdm-gtk-greeter xfce4 xfce4-terminal \
