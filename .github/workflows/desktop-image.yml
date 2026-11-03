@@ -1,0 +1,29 @@
+name: Build XFCE desktop image
+on:
+  workflow_dispatch:
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build 32-bit XFCE filesystem
+        run: |
+          docker build --platform linux/386 -t hk-desktop-xfce server/desktop/image
+          container_id=$(docker create --platform linux/386 hk-desktop-xfce)
+          mkdir rootfs
+          docker export "$container_id" | sudo tar -xp -C rootfs
+          docker rm "$container_id"
+          truncate -s 4G hk-xfce-v1.ext2
+          sudo mke2fs -q -t ext2 -b 4096 -d rootfs hk-xfce-v1.ext2
+          sudo e2fsck -fn hk-xfce-v1.ext2
+          sha256sum hk-xfce-v1.ext2 > hk-xfce-v1.ext2.sha256
+          zstd -T0 -3 hk-xfce-v1.ext2 -o hk-xfce-v1.ext2.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hk-desktop-xfce
+          path: |
+            hk-xfce-v1.ext2.zst
+            hk-xfce-v1.ext2.sha256
+          retention-days: 7

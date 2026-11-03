@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publish production static branch
+        type: boolean
+        default: false
 
 concurrency:
   group: vercel-static-${{ github.repository }}
@@ -69,6 +74,7 @@ jobs:
         run: deno task build
 
       - name: Publish static files to Vercel branch
+        if: github.event_name == 'push' || inputs.deploy == true
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
