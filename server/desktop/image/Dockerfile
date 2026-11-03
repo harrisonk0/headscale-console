@@ -1,5 +1,5 @@
 FROM alpine:3.22 AS icewm-build
-RUN apk add --no-cache build-base lzip wget ca-certificates libx11-dev libxext-dev libxft-dev libxrandr-dev libxinerama-dev libxrender-dev libxcomposite-dev libxcursor-dev libxdamage-dev libxfixes-dev libsm-dev libice-dev libxpm-dev libpng-dev libjpeg-turbo-dev imlib2-dev fontconfig-dev freetype-dev
+RUN apk add --no-cache build-base lzip wget perl-utils ca-certificates libx11-dev libxext-dev libxft-dev libxrandr-dev libxinerama-dev libxrender-dev libxcomposite-dev libxcursor-dev libxdamage-dev libxfixes-dev libsm-dev libice-dev libxpm-dev libpng-dev libjpeg-turbo-dev imlib2-dev fontconfig-dev freetype-dev
 RUN wget -q https://github.com/ice-wm/icewm/releases/download/4.1.0/icewm-4.1.0.tar.lz -O /tmp/icewm.tar.lz && \
     mkdir /src && lzip -dc /tmp/icewm.tar.lz | tar -xf - -C /src --strip-components=1 && \
     cd /src && ./configure --prefix=/usr --without-icesound --disable-nls --disable-librsvg --disable-nanosvg --disable-fribidi --disable-menus-fdo --disable-gdk-pixbuf && \
