@@ -1,4 +1,4 @@
-name: Build XFCE desktop image
+name: Build LXQt desktop image
 on:
   push:
     branches: [main, feat/roaming-desktop]
@@ -11,22 +11,22 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Build 32-bit XFCE filesystem
+      - name: Build 32-bit LXQt filesystem
         run: |
-          docker build --platform linux/386 -t hk-desktop-xfce server/desktop/image
-          container_id=$(docker create --platform linux/386 hk-desktop-xfce)
+          docker build --platform linux/386 -t hk-desktop-lxqt server/desktop/image
+          container_id=$(docker create --platform linux/386 hk-desktop-lxqt)
           mkdir rootfs
           docker export "$container_id" | sudo tar -xp -C rootfs
           docker rm "$container_id"
-          truncate -s 2000M hk-xfce-v1.ext2
-          sudo mke2fs -q -t ext2 -b 4096 -d rootfs hk-xfce-v1.ext2
-          sudo e2fsck -fn hk-xfce-v1.ext2
-          sha256sum hk-xfce-v1.ext2 > hk-xfce-v1.ext2.sha256
-          zstd -T0 -3 hk-xfce-v1.ext2 -o hk-xfce-v1.ext2.zst
+          truncate -s 2000M hk-lxqt-v1.ext2
+          sudo mke2fs -q -t ext2 -b 4096 -d rootfs hk-lxqt-v1.ext2
+          sudo e2fsck -fn hk-lxqt-v1.ext2
+          sha256sum hk-lxqt-v1.ext2 > hk-lxqt-v1.ext2.sha256
+          zstd -T0 -3 hk-lxqt-v1.ext2 -o hk-lxqt-v1.ext2.zst
       - uses: actions/upload-artifact@v4
         with:
-          name: hk-desktop-xfce
+          name: hk-desktop-lxqt
           path: |
-            hk-xfce-v1.ext2.zst
-            hk-xfce-v1.ext2.sha256
+            hk-lxqt-v1.ext2.zst
+            hk-lxqt-v1.ext2.sha256
           retention-days: 7

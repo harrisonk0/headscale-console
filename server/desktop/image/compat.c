@@ -54,3 +54,22 @@ int poll(struct pollfd *fds, nfds_t count, int timeout) {
     }
     return ready;
 }
+
+/* Qt's Unix dispatcher uses ppoll, whose time64 syscall is not implemented by
+ * the browser engine. With no signal-mask change requested, poll is equivalent
+ * apart from timeout precision (rounded up to avoid premature timer expiry). */
+#include <time.h>
+#include <signal.h>
+int ppoll(struct pollfd *fds, nfds_t count, const struct timespec *timeout,
+          const sigset_t *mask) {
+    if (mask) { errno = ENOSYS; return -1; }
+    int ms = -1;
+    if (timeout) {
+        if (timeout->tv_sec < 0 || timeout->tv_nsec < 0 || timeout->tv_nsec >= 1000000000L) {
+            errno = EINVAL; return -1;
+        }
+        long long value = (long long)timeout->tv_sec * 1000 + (timeout->tv_nsec + 999999) / 1000000;
+        ms = value > INT_MAX ? INT_MAX : (int)value;
+    }
+    return poll(fds,count,ms);
+}
