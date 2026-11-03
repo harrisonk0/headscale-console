@@ -18,7 +18,7 @@ jobs:
           mkdir rootfs
           docker export "$container_id" | sudo tar -xp -C rootfs
           docker rm "$container_id"
-          truncate -s 4G hk-xfce-v1.ext2
+          truncate -s 2000M hk-xfce-v1.ext2
           sudo mke2fs -q -t ext2 -b 4096 -d rootfs hk-xfce-v1.ext2
           sudo e2fsck -fn hk-xfce-v1.ext2
           sha256sum hk-xfce-v1.ext2 > hk-xfce-v1.ext2.sha256
