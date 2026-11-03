@@ -1,5 +1,8 @@
 name: Build XFCE desktop image
 on:
+  push:
+    branches: [main, feat/roaming-desktop]
+    paths: ["server/desktop/image/**", ".github/workflows/desktop-image.yml"]
   workflow_dispatch:
 jobs:
   image:
