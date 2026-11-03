@@ -1,4 +1,4 @@
-FROM --platform=linux/386 alpine:3.22
+FROM alpine:3.22
 RUN apk add --no-cache alpine-base eudev udev-init-scripts-openrc \
     xorg-server xf86-input-libinput xrandr xev dbus dbus-openrc \
     lightdm lightdm-openrc lightdm-gtk-greeter xfce4 xfce4-terminal \
@@ -15,6 +15,5 @@ RUN adduser -D -s /bin/bash user && passwd -d user && passwd -l root && \
     mkdir -p /home/user/.config/xfce4/xfconf/xfce-perchannel-xml && \
     cp /etc/xdg/xfce4/panel/default.xml /home/user/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
 COPY xfce/ /home/user/.config/xfce4/xfconf/xfce-perchannel-xml/
-RUN chown -R user:user /home/user && mkdir -p /var/lib/hk-remote && \
-    printf 'nameserver 100.96.0.1\nsearch mesh.movenis.dev\n' > /etc/resolv.conf
+RUN chown -R user:user /home/user && mkdir -p /var/lib/hk-remote
 CMD ["/sbin/init"]
