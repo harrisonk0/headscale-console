@@ -3,8 +3,9 @@ const control='https://hk-desktop.invalid';
 // WebVM's networking client omits DERPPort in its browser socket URL.
 // This alias intentionally maps its port-443 URL to the private relay bridge.
 const relay='hk-funnel-test.tail7bbf4b.ts.net';
-export async function prepareNetwork(disk,report){
-  const {authKey}=await disk.rpc('join');
+let configured=false;
+export function configureNetwork(report){
+  if(configured)return;configured=true;
   // The .invalid name is a virtual endpoint, intercepted locally. Neither the
   // control request nor a relay socket leaves the browser as a WebSocket.
   window.__meshRelayProxy=relay;
@@ -17,6 +18,10 @@ export async function prepareNetwork(disk,report){
     return originalFetch(input,init);
   };
   enableHttpsSockets(control,{apiBase:'/api/remote/desktop/socket',httpsOnly:true,report});
+}
+export async function prepareNetwork(disk,report){
+  configureNetwork(report);
+  const {authKey}=await disk.rpc('join');
   let resolveReady;
   const ready=new Promise(resolve=>{resolveReady=resolve;});
   let resolveOnline;

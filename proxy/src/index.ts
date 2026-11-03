@@ -129,8 +129,9 @@ export default {
           const h = new Headers({ "X-HKRemote-Bridge": env.UMBREL_BRIDGE_SECRET });
           if (range) h.set("Range", range);
           const r = await fetch(new URL("/__hkdesktop-base/hk-icewm-v1-f6a296075b6f.ext2", env.ORIGIN), {
-            method: request.method, headers: h, redirect: "error", signal: AbortSignal.timeout(30000),
+            method: request.method, headers: h, redirect: "manual", signal: AbortSignal.timeout(30000),
           });
+          if (r.status >= 300 && r.status < 400) return json({ error: "Unexpected image redirect." }, 502);
           const out = new Headers(headers);
           for (const name of ["Content-Length", "Content-Range", "Accept-Ranges", "Last-Modified", "ETag"])
             if (r.headers.has(name)) out.set(name, r.headers.get(name)!);
@@ -152,8 +153,9 @@ export default {
           const r = await fetch(new URL(action === "desktop/key" ? "/__hkdesktop-network/key?v=113" : "/__hkdesktop-network/derp/probe", env.ORIGIN), {
             method: action === "desktop/key" ? "GET" : "HEAD",
             headers: { "X-HKRemote-Bridge": env.UMBREL_BRIDGE_SECRET },
-            signal: AbortSignal.timeout(10000), redirect: "error",
+            signal: AbortSignal.timeout(10000), redirect: "manual",
           });
+          if (r.status >= 300 && r.status < 400) return json({ error: "Unexpected network redirect." }, 502);
           const h = new Headers(headers); h.set("Content-Type", "application/json");
           return new Response(r.body, { status: r.status, headers: h });
         }
@@ -173,8 +175,9 @@ export default {
             },
             body: JSON.stringify(data),
             signal: AbortSignal.timeout(25000),
-            redirect: "error",
+            redirect: "manual",
           });
+          if (result.status >= 300 && result.status < 400) return json({ error: "Unexpected storage redirect." }, 502);
           const h = new Headers(headers);
           h.set("Content-Type", "application/json");
           return new Response(result.body, { status: result.status, headers: h });

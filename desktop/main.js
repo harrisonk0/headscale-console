@@ -1,5 +1,5 @@
 import {RemoteDisk,ENGINE,BASE,DEVICE} from './disk-store.js';
-import {prepareNetwork} from './network.js';
+import {configureNetwork,prepareNetwork} from './network.js';
 import {preparePrivateCache,registerPrivateCache,clearPrivateCache} from './private-cache.js';
 import {bootDesktop} from './boot.js';
 const $=id=>document.getElementById(id);
@@ -28,7 +28,7 @@ async function save(exit=false){
   status('Saved at '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
   if(exit){await disk.rpc('release');stopped=true;vm.delete();vm=null;status('Saved — clearing this computer’s personal cache…');await clearPrivateCache();location.assign('/');}
  }catch(e){status(e.message);if(e.status===409)stop(e.message);if(e.status===401){needsAuth=true;$('save').disabled=true;$('exit').disabled=true;$('reauth').hidden=false;}}
- finally{busy=false;if(!stopped){$('save').disabled=false;$('exit').disabled=false;}}
+ finally{busy=false;if(!stopped){$('save').disabled=needsAuth;$('exit').disabled=needsAuth;}}
 }
 async function start(takeover=false){
  if(busy)return;busy=true;$('launch').disabled=true;$('takeover').disabled=true;
@@ -39,6 +39,7 @@ async function start(takeover=false){
   await preparePrivateCache();
   await disk.restore(manifest,(done,total)=>status(`Restoring your desktop (${done}/${total} disk records)…`));status('Loading the desktop engine…');
   if(!crossOriginIsolated)throw new Error('This browser did not enable the isolation required by WebVM.');
+  configureNetwork(message=>status(message));
   const cx=await import(/* @vite-ignore */ `https://cxrtnc.leaningtech.com/${ENGINE}/cx.esm.js`);
   // An HTTPS disk source avoids the WebSocket backend entirely.
   const base=await cx.HttpBytesDevice.create('/api/remote/desktop/base?v='+BASE);
