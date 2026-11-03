@@ -1,5 +1,5 @@
 FROM alpine:3.22 AS icewm-build
-RUN apk add --no-cache build-base lzip wget ca-certificates libx11-dev libxext-dev libxft-dev libxrandr-dev libxinerama-dev libxrender-dev fontconfig-dev freetype-dev
+RUN apk add --no-cache build-base lzip wget ca-certificates libx11-dev libxext-dev libxft-dev libxrandr-dev libxinerama-dev libxrender-dev libxcomposite-dev libxcursor-dev libxdamage-dev libxfixes-dev fontconfig-dev freetype-dev
 RUN wget -q https://github.com/ice-wm/icewm/releases/download/4.1.0/icewm-4.1.0.tar.lz -O /tmp/icewm.tar.lz && \
     mkdir /src && lzip -dc /tmp/icewm.tar.lz | tar -xf - -C /src --strip-components=1 && \
     cd /src && ./configure --prefix=/usr --without-icesound --disable-nls --disable-librsvg --disable-nanosvg && \
@@ -7,7 +7,7 @@ RUN wget -q https://github.com/ice-wm/icewm/releases/download/4.1.0/icewm-4.1.0.
 FROM alpine:3.22
 RUN apk add --no-cache alpine-base eudev udev-init-scripts-openrc \
     xorg-server xf86-input-libinput xrandr xev dbus dbus-openrc \
-    libstdc++ libx11 libxext libxft libxrandr libxinerama libxrender fontconfig freetype xterm mc font-dejavu bash nano vim sudo curl \
+    libstdc++ libx11 libxext libxft libxrandr libxinerama libxrender libxcomposite libxcursor libxdamage libxfixes fontconfig freetype xterm mc font-dejavu bash nano vim sudo curl \
     openssh-client tigervnc-client freerdp python3 ca-certificates
 RUN rc-update add bootmisc boot && rc-update add udev sysinit && \
     rc-update add udev-trigger sysinit && rc-update add udev-settle sysinit && \
