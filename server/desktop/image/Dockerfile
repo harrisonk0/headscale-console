@@ -1,7 +1,7 @@
 FROM alpine:3.22 AS icewm-build
 RUN apk add --no-cache build-base lzip wget ca-certificates libx11-dev libxext-dev libxft-dev libxrandr-dev libxinerama-dev libxrender-dev fontconfig-dev freetype-dev
 RUN wget -q https://github.com/ice-wm/icewm/releases/download/4.1.0/icewm-4.1.0.tar.lz -O /tmp/icewm.tar.lz && \
-    mkdir /src && tar --lzip -xf /tmp/icewm.tar.lz -C /src --strip-components=1 && \
+    mkdir /src && lzip -dc /tmp/icewm.tar.lz | tar -xf - -C /src --strip-components=1 && \
     cd /src && ./configure --prefix=/usr --without-icesound --disable-nls --disable-librsvg --disable-nanosvg && \
     make -j2 && make DESTDIR=/stage install
 FROM alpine:3.22
