@@ -1,5 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { changeRelayMode, prefersHttpsRelay } from "$lib/utils/relay-mode";
+  import ConnectionStatus from "$lib/components/ConnectionStatus.svelte";
+  const httpsOnly = prefersHttpsRelay();
+  function switchRelayMode() {
+    try { changeRelayMode(!httpsOnly); } catch (e) { error = String(e); }
+  }
   import {
     ArrowLeft,
     Terminal,
@@ -224,6 +230,9 @@
               : "Connect to"}
             {hostname || "a machine"}<ArrowUpRight size={18} /></button
           >
+          <button type="button" class="mesh-text-button" onclick={switchRelayMode}>
+            {httpsOnly ? "HTTPS-only mode · Switch to automatic" : "Restricted network? Use HTTPS-only mode"}
+          </button>
           <p class="secure-note">
             <ShieldCheck size={14} /> Encrypted through your private network
           </p>
@@ -247,10 +256,12 @@
           <p>
             {connectionErrorMessage(error)}
           </p>
+          {#if !httpsOnly}<button class="mesh-secondary" onclick={switchRelayMode}>Retry using HTTPS-only mode</button>{/if}
           <details>
             <summary>Technical details</summary>
             <pre>{error}</pre>
           </details>
+          <details><summary>Connection diagnostics</summary><ConnectionStatus /></details>
           <button
             class="mesh-secondary"
             onclick={() => {

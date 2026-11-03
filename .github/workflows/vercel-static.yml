@@ -62,6 +62,9 @@ jobs:
           HEADSCALE_RELAY_ORIGIN_HOST: ${{ vars.HEADSCALE_RELAY_ORIGIN_HOST }}
         run: node scripts/write-public-config.mjs
 
+      - name: Type-check frontend
+        run: deno task check
+
       - name: Build frontend
         run: deno task build
 

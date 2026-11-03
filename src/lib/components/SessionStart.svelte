@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { changeRelayMode, prefersHttpsRelay } from "$lib/utils/relay-mode";
   import { ShieldCheck, ArrowRight, Globe, Copy, Download } from "lucide-svelte";
   import ConnectionStatus from "$lib/components/ConnectionStatus.svelte";
   import { reportStartup } from "$lib/store/startup-status";
@@ -151,6 +152,9 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   onMount(initialise);
+  function switchRelayMode() {
+    try { changeRelayMode(!prefersHttpsRelay()); } catch (e) { error = String(e); }
+  }
 </script>
 
 <main class="mesh-login">
@@ -296,7 +300,11 @@
           Codes can be used once. Login sessions last 30 minutes. Passwords are hashed; the site
           never saves them.
         </p>
-      {/if}{#if error}<div class="mesh-error" role="alert">{error}</div>{/if}
+      {/if}{#if error}<div class="mesh-error" role="alert">{error}</div>
+        {#if stage === "connection"}<button type="button" class="mesh-text-button" onclick={switchRelayMode}>
+          {prefersHttpsRelay() ? "Switch to automatic connection mode" : "Retry using HTTPS-only mode"}
+        </button>{/if}
+      {/if}
     </form>
   </div>
 </main>

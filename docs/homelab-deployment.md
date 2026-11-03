@@ -252,3 +252,16 @@ The browser Worker bridge, native port-8443 endpoint, and port-443 alias were
 checked to return the same DERP greeting fingerprint; the greetings differed
 before alignment. The published WASM also contains the STUN-only filter.
 No new Tailnet clients were enrolled for these checks.
+
+## Restricted-network connection modes
+
+Startup now checks a real binary DERP server greeting, in addition to the generic
+echo and control checks. If a network allows a generic WebSocket but filters
+the relay URL, the client switches to authenticated HTTPS before joining.
+The control and relay paths are both checked in the selected mode.
+
+The connection form and failure screen offer an HTTPS-only retry. This saves
+only a non-secret transport preference and reloads the app through its existing
+login and encrypted identity restoration. The connection form can switch back
+to automatic mode. Connection errors expose the existing credential-free startup
+diagnostics so a relay failure can be distinguished from a destination failure.
