@@ -65,7 +65,7 @@ async function start(takeover=false){
   void desktop.session.then(()=>{if(!stopped)void save(true);}).catch(e=>{if(!stopped)stop(e.message);});
   saveTimer=setInterval(()=>{if(!busy&&!needsAuth)void save();},15000);
   $('save').disabled=false;$('exit').disabled=false;
- }catch(e){status(e.message);$('message').textContent=e.message;if(e.status===409)$('takeover').hidden=false;else{clearInterval(heartbeatTimer);if(disk?.lease)await disk.rpc('release').catch(()=>{});}}
+ }catch(e){status(e.message);$('message').textContent=e.message;clearInterval(heartbeatTimer);if(vm){vm.delete();vm=null;}await clearPrivateCache().catch(()=>{});if(e.status===409)$('takeover').hidden=false;else if(disk?.lease)await disk.rpc('release').catch(()=>{});}
  finally{busy=false;$('launch').disabled=false;$('takeover').disabled=false;}
 }
 $('launch').onclick=()=>start();$('takeover').onclick=()=>start(true);$('save').onclick=()=>save();$('exit').onclick=()=>save(true);

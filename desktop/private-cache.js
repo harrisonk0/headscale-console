@@ -18,7 +18,7 @@ export function registerPrivateCache(value){device=value;}
 export async function clearPrivateCache(){
   // Use the supported engine API so worker-owned DB connections are cleared
   // too. This runs after the guest stops and its remote save is acknowledged.
-  if(device)await device.reset();
+  if(device){await device.reset();device=undefined;}
   release?.();release=undefined;
   await remove(DATABASE);
 }
