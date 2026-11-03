@@ -32,7 +32,7 @@
           <div class="icon"><House size={30}/></div><ArrowUpRight class="arrow" size={22}/>
           <h2>Open Umbrel</h2><p>Your home server, files and apps.<br/>Right where you left them.</p><span>Go home →</span>
         </button>
-        <a class="choice desktop" href="/desktop/">
+        <a class="choice desktop" href="/desktop/index.html">
           <div class="icon"><Monitor size={30}/></div><ArrowUpRight class="arrow" size={22}/>
           <h2>Launch desktop</h2><p>Your Linux desktop, running here.<br/>Files and settings that follow you.</p><span>Make yourself at home →</span>
         </a>

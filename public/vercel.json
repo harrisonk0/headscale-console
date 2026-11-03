@@ -7,6 +7,11 @@
   ],
   "redirects": [
     {
+      "source": "/desktop/",
+      "destination": "/desktop/index.html",
+      "permanent": false
+    },
+    {
       "source": "/:path*",
       "has": [
         {
