@@ -26,6 +26,7 @@ export class HttpTransport {
     private origin: string,
     private authorize: (token: string) => { hash: string; expires: number } | undefined,
     private umbrelBridge?: string,
+    private bridgePaths?: string[],
   ) {}
   private owner(token: string) {
     const row = this.authorize(token);
@@ -88,8 +89,12 @@ export class HttpTransport {
     )
       fail(400, "Invalid transport destination.");
     if (this.umbrelBridge) {
-      if (url.origin !== original.origin || url.pathname !== "/__hkremote/trpc" || protocols.length)
+      if (url.origin !== original.origin || !(this.bridgePaths || ["/__hkremote/trpc"]).includes(url.pathname) ||
+          (this.bridgePaths ? protocols.length > 1 : protocols.length > 0))
         fail(403, "Only the Umbrel dashboard connection is allowed.");
+      if (this.bridgePaths && ((url.pathname.endsWith('/ts2021') && protocols[0] !== 'tailscale-control-protocol') ||
+          (url.pathname.endsWith('/derp') && protocols[0] !== 'derp')))
+        fail(400, "Invalid desktop transport protocol.");
     } else {
       if (
         publicRelay

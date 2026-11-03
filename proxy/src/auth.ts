@@ -85,9 +85,12 @@ type SessionRow = {
 export class AuthGuard extends DurableObject<Env> {
   private transports: HttpTransport;
   private umbrelTransports: HttpTransport;
+  private desktopTransports: HttpTransport;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.transports = new HttpTransport(env.ORIGIN, (token) => this.session(token, "remote"));
+    this.desktopTransports = new HttpTransport(env.ORIGIN, (token) => this.session(token, "remote"),
+      env.UMBREL_BRIDGE_SECRET, ["/__hkdesktop-network/ts2021", "/__hkdesktop-network/derp"]);
     this.umbrelTransports = new HttpTransport(
       env.ORIGIN,
       (token) => this.session(token, "umbrel"),
@@ -205,6 +208,29 @@ export class AuthGuard extends DurableObject<Env> {
       authenticated: !!session,
       ...(session ? { resumeKey: session.resume_key, expiresAt: session.expires } : {}),
     };
+  }
+  async desktopSession(token: string) {
+    const row = this.session(token, "remote");
+    if (!row) throw new AuthError(401, "Sign in again to open or save your desktop.");
+    return { hash: row.hash, expires: row.expires };
+  }
+  async desktopSocket(token: string, action: string, b: Record<string, unknown>) {
+    if (action === "open") {
+      if (typeof b.path !== "string" || b.path.length > 8192 || !Array.isArray(b.protocols) ||
+          b.protocols.some(p => typeof p !== "string") || b.relayHost)
+        throw new AuthError(400, "Invalid desktop transport.");
+      const path = new URL(b.path, "https://desktop.invalid");
+      if (b.path !== path.pathname + path.search || !["/ts2021", "/derp"].includes(path.pathname))
+        throw new AuthError(400, "Invalid desktop destination.");
+      return this.desktopTransports.open(token,
+        new URL("/__hkdesktop-network" + path.pathname + path.search, this.env.ORIGIN).href, b.protocols);
+    }
+    if (typeof b.id !== "string") throw new AuthError(400, "Invalid transport handle.");
+    if (action === "read") return this.desktopTransports.read(token, b.id, Number(b.ack));
+    if (action === "close") return this.desktopTransports.close(token, b.id);
+    if (action === "write") return this.desktopTransports.write(token, b.id, Number(b.sequence),
+      b.frames as { kind: "binary" | "text"; data: string }[]);
+    throw new AuthError(400, "Unknown desktop transport action.");
   }
   async beginSetup(token: string) {
     this.requireBootstrap(token);
@@ -418,6 +444,7 @@ export class AuthGuard extends DurableObject<Env> {
   async logout(token: string) {
     const hash = digest(token);
     this.transports.revoke(hash);
+    this.desktopTransports.revoke(hash);
     this.umbrelTransports.revoke(hash);
     for (const child of this.ctx.storage.sql
       .exec<{ hash: string }>("SELECT hash FROM sessions WHERE parent=?", hash)

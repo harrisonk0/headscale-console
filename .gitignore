@@ -45,3 +45,6 @@ work/
 proxy/.dev.vars*
 
 proxy/worker-configuration.d.ts
+
+__pycache__/
+/dev-dist/

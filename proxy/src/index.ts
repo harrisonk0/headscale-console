@@ -118,8 +118,67 @@ export default {
       if (url.pathname.startsWith("/__remote/auth/")) {
         const action = url.pathname.slice("/__remote/auth/".length),
           session = cookie(request, remoteCookie);
+        // Public, immutable Linux distribution only. Personal disk overlays
+        // remain behind desktopSession/MFA and are never served by this route.
+        if (action === "desktop/base" && ["GET", "HEAD"].includes(request.method)) {
+          const range = request.headers.get("Range");
+          const match = range?.match(/^bytes=(\d+)-(\d+)$/);
+          if (request.method === "GET" && (!match || Number(match[2]) < Number(match[1]) ||
+              Number(match[2]) - Number(match[1]) >= 8 * 1024 * 1024))
+            return json({ error: "A bounded image range is required." }, 416);
+          const h = new Headers({ "X-HKRemote-Bridge": env.UMBREL_BRIDGE_SECRET });
+          if (range) h.set("Range", range);
+          const r = await fetch(new URL("/__hkdesktop-base/hk-icewm-v1-f6a296075b6f.ext2", env.ORIGIN), {
+            method: request.method, headers: h, redirect: "error", signal: AbortSignal.timeout(30000),
+          });
+          const out = new Headers(headers);
+          for (const name of ["Content-Length", "Content-Range", "Accept-Ranges", "Last-Modified", "ETag"])
+            if (r.headers.has(name)) out.set(name, r.headers.get(name)!);
+          out.set("Content-Type", "application/octet-stream");
+          out.set("Cache-Control", r.ok ? "public, max-age=31536000, immutable" : "no-store");
+          out.set("Vary", "Origin, Range");
+          return new Response(r.body, { status: r.status, headers: out });
+        }
         if (action === "status" && request.method === "GET")
           return json(await auth.status(session));
+        if (/^desktop\/socket\/(open|read|write|close)$/.test(action)) {
+          if (request.method !== "POST" || !(origin === env.APP_ORIGIN || origin === "http://localhost:5173"))
+            return json({ error: "Origin not allowed." }, 403);
+          return json(await auth.desktopSocket(session, action.slice(15), await body(request, 400000)));
+        }
+        if (["desktop/key", "desktop/probe"].includes(action) && request.method === "POST" &&
+            (origin === env.APP_ORIGIN || origin === "http://localhost:5173")) {
+          await auth.desktopSession(session);
+          const r = await fetch(new URL(action === "desktop/key" ? "/__hkdesktop-network/key?v=113" : "/__hkdesktop-network/derp/probe", env.ORIGIN), {
+            method: action === "desktop/key" ? "GET" : "HEAD",
+            headers: { "X-HKRemote-Bridge": env.UMBREL_BRIDGE_SECRET },
+            signal: AbortSignal.timeout(10000), redirect: "error",
+          });
+          const h = new Headers(headers); h.set("Content-Type", "application/json");
+          return new Response(r.body, { status: r.status, headers: h });
+        }
+        if (/^desktop\/(claim|heartbeat|release|put|read|commit|join|resume|begin)$/.test(action)) {
+          if (request.method !== "POST" || !(origin === env.APP_ORIGIN || origin === "http://localhost:5173"))
+            return json({ error: "Origin not allowed." }, 403);
+          const identity = await auth.desktopSession(session);
+          if (action === "desktop/join") await auth.reserveJoin(session);
+          const data = await body(request, 8 * 1024 * 1024);
+          const result = await fetch(new URL("/__hkdesktop/" + action.slice(8), env.ORIGIN), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-HKRemote-Bridge": env.UMBREL_BRIDGE_SECRET,
+              "X-Desktop-Session": identity.hash,
+              "X-Desktop-Expires": String(identity.expires),
+            },
+            body: JSON.stringify(data),
+            signal: AbortSignal.timeout(25000),
+            redirect: "error",
+          });
+          const h = new Headers(headers);
+          h.set("Content-Type", "application/json");
+          return new Response(result.body, { status: result.status, headers: h });
+        }
         if (
           request.method !== "POST" ||
           !(origin === env.APP_ORIGIN || origin === "http://localhost:5173")

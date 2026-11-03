@@ -42,6 +42,7 @@ function versionVirtualModulePlugin(): Plugin {
 export default defineConfig(({}) => {
   return {
     base: BASE_PATH,
+    build: { rollupOptions: { input: { main: resolve(__dirname, "index.html"), desktop: resolve(__dirname, "desktop/index.html") } } },
     plugins: [
       versionVirtualModulePlugin(),
       tailwindcss() as Plugin[],
@@ -70,6 +71,10 @@ export default defineConfig(({}) => {
       },
     },
     server: {
+      headers: {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp",
+      },
       proxy: {
         "/api/remote": {
           target: "http://localhost:8787",

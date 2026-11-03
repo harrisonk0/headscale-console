@@ -1,6 +1,7 @@
 type SocketOptions = {
   apiBase?: string;
   pathOnly?: string;
+  httpsOnly?: boolean;
   report?: (message: string, state?: "ok" | "error") => void;
 };
 let apiBase = "/api/remote/socket";
@@ -245,6 +246,7 @@ export function enableHttpsSockets(controlUrl: string, options: SocketOptions = 
           args[1] === undefined ? [] : typeof args[1] === "string" ? [args[1]] : args[1];
         return new HttpsSocket(url.href, protocols);
       }
+      if (options.httpsOnly) throw new Error("This desktop only permits configured HTTPS transports.");
       return Reflect.construct(target, args);
     },
   });

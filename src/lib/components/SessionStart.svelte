@@ -10,11 +10,15 @@
     setupToken = "",
     needsNode = true,
     prepareSession,
+    loginOnly = false,
+    forceLogin = false,
   }: {
     onReady: (key: string) => void;
     setupToken?: string;
     needsNode?: boolean;
     prepareSession?: (progress: (message: string) => void) => Promise<boolean>;
+    loginOnly?: boolean;
+    forceLogin?: boolean;
   } = $props();
   let password = $state(""),
     confirm = $state(""),
@@ -46,6 +50,7 @@
     error = "";
     stage = "connection";
     try {
+      if (loginOnly) { onReady(""); return; }
       const createNode = prepareSession
         ? await prepareSession((message) => {
             progress = message;
@@ -84,7 +89,7 @@
       });
       if (!r.ok) throw new Error("Login service is unavailable.");
       const s = await r.json();
-      if (s.authenticated && !setupToken) {
+      if (s.authenticated && !setupToken && !forceLogin) {
         await enter();
         return;
       }
