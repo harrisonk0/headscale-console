@@ -1,0 +1,7 @@
+Theme="default.theme"
+DesktopBackgroundColor="rgb:101b/242b/2024"
+TaskBarShowAPMStatus=0
+TaskBarShowMailboxStatus=0
+TaskBarShowCPUStatus=0
+TaskBarShowNetStatus=0
+TerminalCommand="xterm"

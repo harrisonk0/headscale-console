@@ -1,0 +1,4 @@
+prog "Terminal" utilities-terminal xterm
+prog "File manager" system-file-manager xterm -e mc
+separator
+prog "Connect to hk-cloud" utilities-terminal xterm -e ssh ubuntu@hk-cloud.mesh.movenis.dev
