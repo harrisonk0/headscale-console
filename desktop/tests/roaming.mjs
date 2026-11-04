@@ -27,8 +27,8 @@ const server=http.createServer(async(req,res)=>{
    const r=await fetch('http://127.0.0.1:39110/'+req.url.split('/').at(-1),{method:'POST',headers:{'Content-Type':'application/json','X-Desktop-Session':'a'.repeat(64),'X-Desktop-Expires':String(Date.now()+3600000)},body});
    res.writeHead(r.status,{'Content-Type':'application/json'});res.end(await r.text());return;
   }
-  res.writeHead(200,{'Content-Type':req.url==='/disk-store.js'?'text/javascript':'text/html','Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Embedder-Policy':'require-corp'});
-  res.end(req.url==='/disk-store.js'?fs.readFileSync(path.join(repo,'desktop/disk-store.js')):'<title>Roaming disk test</title>');
+  res.writeHead(200,{'Content-Type':['/disk-store.js','/boot.js'].includes(req.url)?'text/javascript':'text/html','Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Embedder-Policy':'require-corp'});
+  res.end(['/disk-store.js','/boot.js'].includes(req.url)?fs.readFileSync(path.join(repo,'desktop',req.url.slice(1))):'<title>Roaming disk test</title><canvas id=display width=1280 height=800></canvas>');
  }catch(e){res.writeHead(500);res.end(e.message);}
 }).listen(18769,'127.0.0.1');
 const browser=await chromium.launch();let nativeSockets=0;
@@ -37,7 +37,7 @@ async function boot(p){return p.evaluate(async()=>{
  const cx=await import('https://cxrtnc.leaningtech.com/1.4.0/cx.esm.js');window.mod=await import('/disk-store.js');
  const base=await (window.useLocalImage?cx.HttpBytesDevice.create('/base.ext2'):cx.CloudDevice.create('https://disks.webvm.io/alpine_20251007.ext2'));
  const cache=await cx.IDBDevice.create(mod.DEVICE),overlay=await cx.OverlayDevice.create(base,cache);
- window.vm=await cx.Linux.create({mounts:[{type:'ext2',path:'/',dev:overlay},{type:'devs',path:'/dev'},{type:'proc',path:'/proc'}]});
+ window.vm=await cx.Linux.create({mounts:[{type:'ext2',path:'/',dev:overlay},{type:'devs',path:'/dev'},{type:'devpts',path:'/dev/pts'},{type:'proc',path:'/proc'},{type:'sys',path:'/sys'}]});
  });}
 async function connectDisk(p,takeover=false){return p.evaluate(async takeover=>{
  window.mod=await import('/disk-store.js');
@@ -46,10 +46,19 @@ async function connectDisk(p,takeover=false){return p.evaluate(async takeover=>{
  },takeover);}
 try{
  const a=await fresh();await connectDisk(a);await boot(a);
+ if(process.env.HK_DESKTOP_GUI==='1'){
+  await a.evaluate(async()=>{
+   vm.setCustomConsole(()=>{},120,40);
+   vm.setKmsCanvas(document.getElementById('display'),1280,800);
+   const {bootDesktop}=await import('/boot.js');
+   await bootDesktop(vm,message=>console.log(message));
+  });
+  console.log('Graphical desktop launched; testing its full disk checkpoint.');
+ }
  const written=await a.evaluate(()=>vm.run('/bin/sh',['-c','mkdir -p /root/.config; echo roaming-proof > /root/hk-file; echo custom-setting > /root/.config/hk-setting; printf "#!/bin/sh\\necho tool-installed\\n" > /usr/local/bin/hk-tool; chmod 755 /usr/local/bin/hk-tool'],{uid:0,gid:0}));
  assert.equal(written.status,0);
  // No artificial delay: save must wait for the guest checkpoint to reach IDB.
- await a.evaluate(()=>disk.save(vm));
+ const saveStarted=Date.now();await a.evaluate(()=>disk.save(vm));console.log('Save completed in',Math.round((Date.now()-saveStarted)/1000),'seconds');
  const b=await fresh();assert.equal(await connectDisk(b,true),1);await boot(b);
  const restored=await b.evaluate(()=>vm.run('/bin/sh',['-c','test "$(cat /root/hk-file)" = roaming-proof && test "$(cat /root/.config/hk-setting)" = custom-setting && test "$(/usr/local/bin/hk-tool)" = tool-installed'],{uid:0,gid:0}));
  assert.equal(restored.status,0);
