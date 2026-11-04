@@ -13,6 +13,19 @@ export const base64 = bytes => {
 };
 export const unbase64 = s => Uint8Array.from(atob(s), c=>c.charCodeAt(0));
 const hash = async bytes => [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
+// Bound memory and request load while hiding round-trip latency. Drain in-flight
+// writes before reporting failure so a retry cannot race its own old uploads.
+async function transfer(items,run){
+  const results=new Array(items.length);let next=0,failure;
+  await Promise.all(Array.from({length:Math.min(4,items.length)},async()=>{
+    while(!failure&&next<items.length){
+      const i=next++;
+      try{results[i]=await run(items[i],i);}catch(e){failure=e;}
+    }
+  }));
+  if(failure)throw failure;
+  return results;
+}
 function pack(v) {
   if (v instanceof Uint8Array) return ['bytes',base64(v)];
   if (v instanceof ArrayBuffer) return ['buffer',base64(new Uint8Array(v))];
@@ -67,12 +80,11 @@ export async function restore(manifest,read) {
   if(manifest.format!=='hk-desktop-idb-v1'||manifest.engine!==ENGINE||manifest.base!==BASE)
     throw new Error('Saved disk needs a different desktop version. Refusing to reset it.');
   // Verify every record before replacing local data. Remote state stays immutable.
-  const records=[];
-  for(const key of manifest.chunks){
+  const records=await transfer(manifest.chunks,async key=>{
     const bytes=await read(key);
     if(await hash(bytes)!==key)throw new Error('Saved disk failed its integrity check.');
-    records.push(unpack(JSON.parse(decoder.decode(bytes))));
-  }
+    return unpack(JSON.parse(decoder.decode(bytes)));
+  });
   const db=await openDatabase(true);
   await new Promise((resolve,reject)=>{
     const tx=db.transaction('files','readwrite'),store=tx.objectStore('files');
@@ -110,11 +122,12 @@ export class RemoteDisk {
     const previous=[...this.known];
     if(previous.length===manifest.chunks.length&&previous.every((v,i)=>v===manifest.chunks[i])) return;
     const uploads=[...chunks].filter(([hash])=>!this.known.has(hash));
-    for(let i=0;i<uploads.length;i++){
-      const [hash,bytes]=uploads[i];
-      progress(`Saving changes (${i+1}/${uploads.length} disk records)…`);
+    let uploaded=0;
+    progress(`Saving changes (0/${uploads.length} disk records)…`);
+    await transfer(uploads,async([hash,bytes])=>{
       await this.rpc('put',{hash,data:base64(bytes)});
-    }
+      progress(`Saving changes (${++uploaded}/${uploads.length} disk records)…`);
+    });
     progress('Confirming your save…');
     const result=await this.rpc('commit',{revision:this.revision,manifest});
     this.revision=result.revision;this.known=new Set(manifest.chunks);
