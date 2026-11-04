@@ -1,0 +1,5 @@
+{
+  "controlUrl": "https://mesh-browser-proxy.harrisonk-0.workers.dev",
+  "relayProxyHost": "mesh-browser-proxy.harrisonk-0.workers.dev",
+  "relayOriginHost": "hk-funnel-test.tail7bbf4b.ts.net"
+}
