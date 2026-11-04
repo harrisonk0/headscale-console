@@ -56,7 +56,7 @@ async function start(takeover=false){
   vm.registerCallback('diskActivity',state=>{if(state!=='ready'){generation++;if(!busy)saveStatus('Changes waiting to save…');}});
   const consoleOutput=$('console');
   const read=vm.setCustomConsole((buf,vt)=>{if(vt===1){consoleOutput.textContent=(consoleOutput.textContent+new TextDecoder().decode(new Uint8Array(buf))).slice(-16000);}},120,40);
-  $('logs').onclick=()=>{consoleOutput.hidden=!consoleOutput.hidden;};
+  $('logs').hidden=false;$('logs').onclick=()=>{consoleOutput.hidden=!consoleOutput.hidden;};
   $('display').addEventListener('keydown',e=>{if(e.ctrlKey&&e.altKey&&e.key==='1'){consoleOutput.hidden=!consoleOutput.hidden;e.preventDefault();}});
   consoleOutput.addEventListener('keydown',e=>{if(e.key==='Enter')read(13);else if(e.key.length===1)read(e.key.charCodeAt(0));});
   vm.setKmsCanvas($('display'),Math.max(1024,innerWidth),Math.max(768,innerHeight-140));
@@ -66,12 +66,12 @@ async function start(takeover=false){
   $('start').hidden=true;$('display').hidden=false;$('display').focus();
   $('detail').textContent='HTTPS autosave · Private network via hk-cloud · One active computer';
   const desktop=await bootDesktop(vm,status);
-  status('IceWM is running. The first display can take a minute to appear.');
+  status('Desktop ready');
   $('tools').hidden=false;$('logs').hidden=false;saveStatus('Autosave checks every 15 seconds. Use Save and exit before leaving.');
   void desktop.session.then(()=>{if(!stopped)void save(true);}).catch(e=>{if(!stopped)stop(e.message);});
   saveTimer=setInterval(()=>{if(!busy&&!needsAuth)void save();},15000);
   $('save').disabled=false;$('exit').disabled=false;
- }catch(e){status('Desktop could not start');$('display').hidden=true;$('console').hidden=true;$('start').hidden=false;$('message').textContent=e.message;$('launch').textContent='Retry desktop';saveStatus('Your last completed remote save is unchanged.');clearInterval(heartbeatTimer);clearInterval(saveTimer);if(vm){vm.delete();vm=null;}await clearPrivateCache().catch(()=>{});if(e.status===409)$('takeover').hidden=false;else if(disk?.lease)await disk.rpc('release').catch(()=>{});}
+ }catch(e){if(vm){await Promise.race([vm.run('/bin/cat',['/var/log/Xorg.0.log'],{uid:0,gid:0}).catch(()=>{}),new Promise(resolve=>setTimeout(resolve,5000))]);}$('diagnostic').textContent=$('console').textContent;status('Desktop could not start');$('display').hidden=true;$('console').hidden=true;$('start').hidden=false;$('message').textContent=e.message;$('launch').textContent='Retry desktop';saveStatus('Your last completed remote save is unchanged.');clearInterval(heartbeatTimer);clearInterval(saveTimer);if(vm){vm.delete();vm=null;}await clearPrivateCache().catch(()=>{});if(e.status===409)$('takeover').hidden=false;else if(disk?.lease)await disk.rpc('release').catch(()=>{});}
  finally{busy=false;$('launch').disabled=false;$('takeover').disabled=false;}
 }
 $('launch').onclick=()=>start();$('takeover').onclick=()=>start(true);$('save').onclick=()=>save();$('exit').onclick=()=>save(true);
