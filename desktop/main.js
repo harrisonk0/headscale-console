@@ -19,7 +19,7 @@ async function connect(){
   client.onrequired=parameters=>{
    $('credentials').showModal();$('credential-form').onsubmit=event=>{event.preventDefault();for(const name of parameters){if(!['username','password'].includes(name))continue;const writer=new G.StringWriter(client.createArgumentValueStream('text/plain',name));writer.sendText($(name).value);writer.sendEnd();}$('password').value='';$('credentials').close();};
   };
-  const mouse=new G.Mouse(display.getElement());mouse.onmousedown=mouse.onmouseup=mouse.onmousemove=state=>{if(connected)client.sendMouseState(state,true);};
+  const mouse=new G.Mouse(display.getElement());mouse.onmousedown=mouse.onmouseup=mouse.onmousemove=state=>{if(connected){if(state.left||state.middle||state.right)$('workspace').focus();client.sendMouseState(state,true);}};
   keyboard=new G.Keyboard($('workspace'));keyboard.onkeydown=key=>{if(connected){client.sendKeyEvent(1,key);return false;}};keyboard.onkeyup=key=>{if(connected)client.sendKeyEvent(0,key);};
   const parameters=new URLSearchParams({token:data.token,GUAC_DATA_SOURCE:'json',GUAC_ID:data.connection,GUAC_TYPE:'c',GUAC_WIDTH:String(Math.min(1920,innerWidth)),GUAC_HEIGHT:String(Math.max(600,innerHeight-90)),GUAC_DPI:'96',GUAC_TIMEZONE:Intl.DateTimeFormat().resolvedOptions().timeZone});
   parameters.append('GUAC_IMAGE','image/png');parameters.append('GUAC_IMAGE','image/jpeg');
