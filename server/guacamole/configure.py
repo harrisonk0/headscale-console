@@ -30,10 +30,12 @@ block='''    # HK Guacamole: fixed destinations, authenticated edge only
         @guac_auth header X-HKRemote-Bridge {$HK_REMOTE_BRIDGE_SECRET}
         handle @guac_auth {
             request_header -X-HKRemote-Bridge
-            uri strip_prefix /__hkguac
-            rewrite * /guacamole{uri}
-            reverse_proxy 127.0.0.1:39011 {
-                flush_interval -1
+            route {
+                uri strip_prefix /__hkguac
+                rewrite * /guacamole{uri}
+                reverse_proxy 127.0.0.1:39011 {
+                    flush_interval -1
+                }
             }
         }
         respond "Forbidden" 403

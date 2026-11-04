@@ -1,3 +1,4 @@
+import { guacamoleQuery } from "./guac-query";
 import { AuthGuard } from "./auth";
 export { AuthGuard };
 const remoteCookie = "__Host-hkremote",
@@ -131,12 +132,18 @@ export default {
           const path=action.slice("guac/proxy/".length);
           if (!["tunnel","guacamole-common-js/all.min.js"].includes(path) || !["GET","POST"].includes(request.method)) return json({error:"Not found."},404);
           if(request.method === "POST" && origin !== env.APP_ORIGIN) return json({error:"Origin not allowed."},403);
-          const upstream=new URL("/__hkguac/"+path,env.ORIGIN);upstream.search=url.search;
+          const upstream=new URL("/__hkguac/"+path,env.ORIGIN);
+          if(path==="tunnel"){
+            const query=guacamoleQuery(url);
+            if(!query)return json({error:"Invalid desktop tunnel operation."},400);
+            upstream.search=query;
+          }else upstream.search=url.search;
           const h=new Headers({"X-HKRemote-Bridge":env.UMBREL_BRIDGE_SECRET});
           if(request.headers.has("Guacamole-Tunnel-Token"))h.set("Guacamole-Tunnel-Token",request.headers.get("Guacamole-Tunnel-Token")!);
           if(request.headers.has("Content-Type"))h.set("Content-Type",request.headers.get("Content-Type")!);
           const result=await fetch(upstream,{method:request.method,headers:h,body:request.body,redirect:"manual"});
           const responseHeaders=new Headers(headers);
+          responseHeaders.set("Cache-Control","no-store, no-transform");responseHeaders.set("X-Accel-Buffering","no");
           for(const name of ["Content-Type","Guacamole-Status-Code","Guacamole-Error-Message","Guacamole-Tunnel-Token"])if(result.headers.has(name))responseHeaders.set(name,result.headers.get(name)!);
           return new Response(result.body,{status:result.status,headers:responseHeaders});
         }
