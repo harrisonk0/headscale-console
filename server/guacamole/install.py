@@ -56,6 +56,6 @@ xml=xml.replace('port="8080"','port="39011" address="127.0.0.1"')
 for name in ['hk-guacd','hk-guacamole']:
  exists=subprocess.run(['docker','inspect',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
  if exists:raise SystemExit('Container already exists; review before replacing: '+name)
-run('docker','run','-d','--name','hk-guacd','--restart','unless-stopped','--network','host','--entrypoint','/opt/guacamole/sbin/guacd','guacamole/guacd:1.6.0','-f','-b','127.0.0.1','-l','4823')
+run('docker','run','-d','--name','hk-guacd','--restart','unless-stopped','--network','host','--health-cmd','nc -z 127.0.0.1 4823 || exit 1','--health-interval','30s','--entrypoint','/opt/guacamole/sbin/guacd','guacamole/guacd:1.6.0','-f','-b','127.0.0.1','-l','4823')
 run('docker','run','-d','--name','hk-guacamole','--restart','unless-stopped','--network','host','--env-file',str(P/'guacamole.env'),'-v',str(P/'server.xml')+':/usr/local/tomcat/conf/server.xml:ro','guacamole/guacamole:1.6.0')
 run('systemctl','daemon-reload');run('systemctl','enable','--now','hk-lxqt-display','hk-lxqt-session')
