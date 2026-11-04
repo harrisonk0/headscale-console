@@ -90,7 +90,7 @@ export class RemoteDisk {
   }
   rpc(action,data={}){return this.post(action,{...data,lease:this.lease});}
   async restore(manifest,progress=()=>{}){let done=0;await restore(manifest,async hash=>{const bytes=unbase64((await this.rpc('read',{hash})).data);progress(++done,manifest.chunks.length);return bytes;});}
-  async save(vm,onSnapshot=()=>{}){
+  async save(vm,onSnapshot=()=>{},progress=()=>{}){
     const marker=crypto.randomUUID();
     const flushed=await vm.run('/bin/sh',['-c',`mkdir -p /var/lib/hk-remote; sync; printf '%s' '${marker}' > /var/lib/hk-remote/checkpoint; sync`],{uid:0,gid:0});
     if(flushed.status!==0)throw new Error('Linux could not flush the desktop disk.');
@@ -104,11 +104,18 @@ export class RemoteDisk {
     onSnapshot();
     // Recover an acknowledged-on-server but interrupted-on-client save, and
     // discard abandoned uploads without touching the three completed versions.
+    progress('Checking the last saved version…');
     const head=await this.rpc('begin');
     this.revision=head.revision;this.known=new Set(head.manifest?.chunks||[]);
     const previous=[...this.known];
     if(previous.length===manifest.chunks.length&&previous.every((v,i)=>v===manifest.chunks[i])) return;
-    for(const [hash,bytes] of chunks)if(!this.known.has(hash))await this.rpc('put',{hash,data:base64(bytes)});
+    const uploads=[...chunks].filter(([hash])=>!this.known.has(hash));
+    for(let i=0;i<uploads.length;i++){
+      const [hash,bytes]=uploads[i];
+      progress(`Saving changes (${i+1}/${uploads.length} disk records)…`);
+      await this.rpc('put',{hash,data:base64(bytes)});
+    }
+    progress('Confirming your save…');
     const result=await this.rpc('commit',{revision:this.revision,manifest});
     this.revision=result.revision;this.known=new Set(manifest.chunks);
   }

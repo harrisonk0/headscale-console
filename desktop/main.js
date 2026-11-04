@@ -4,34 +4,37 @@ import {preparePrivateCache,registerPrivateCache,clearPrivateCache} from './priv
 import {bootDesktop} from './boot.js';
 const $=id=>document.getElementById(id);
 let vm=null,disk=null,busy=false,stopped=false,generation=0,savedGeneration=-1,needsAuth=false;
-let heartbeatTimer,saveTimer,lastHeartbeat=0;
+let heartbeatTimer,saveTimer,lastHeartbeat=0,heartbeatBusy=false;
 const status=text=>{$('status').textContent=text;};
+const saveStatus=text=>{$('save-status').textContent=text;};
 async function post(action,data={}){
  const r=await fetch('/api/remote/desktop/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(30000)});
  const b=await r.json();if(!r.ok){const e=new Error(b.error||'Desktop storage is unavailable.');e.status=r.status;throw e;}return b;
 }
 function stop(message){stopped=true;clearInterval(heartbeatTimer);clearInterval(saveTimer);vm?.delete();vm=null;$('display').hidden=true;$('start').hidden=false;$('message').textContent=message;status(message);$('save').disabled=true;$('exit').disabled=true;}
 async function heartbeat(){
+ if(heartbeatBusy||stopped)return;heartbeatBusy=true;
  try{const result=await disk.rpc('resume');lastHeartbeat=Date.now();
-  if(needsAuth){needsAuth=false;$('save').disabled=busy;$('exit').disabled=busy;status('Sign-in renewed — saving can continue.');}
+  if(needsAuth){needsAuth=false;$('save').disabled=busy;$('exit').disabled=busy;saveStatus('Sign-in renewed — saving can continue.');}
   $('reauth').hidden=result.authExpires-Date.now()>120000;
  }
- catch(e){if(e.status===409)stop(e.message);else if(e.status===401){needsAuth=true;$('save').disabled=true;$('exit').disabled=true;$('reauth').hidden=false;status('Sign in again to resume saving. Changes remain on this computer.');}else{status('Connection lost — changes are not saved remotely.');}}
+ catch(e){if(e.status===409)stop(e.message);else if(e.status===401){needsAuth=true;$('save').disabled=true;$('exit').disabled=true;$('reauth').hidden=false;saveStatus('Sign in again to resume saving. Changes remain on this computer.');}else{saveStatus('Connection lost — changes are not saved remotely.');}}
+ finally{heartbeatBusy=false;}
 }
 async function save(exit=false){
  if(busy||!vm||stopped||needsAuth)return;
- busy=true;$('save').disabled=true;$('exit').disabled=true;status('Saving to your private storage…');
+ busy=true;$('save').disabled=true;$('exit').disabled=true;saveStatus('Flushing changes to your private storage…');
  try{
   let checkpointGeneration;
-  await disk.save(vm,()=>{checkpointGeneration=generation;});
+  await disk.save(vm,()=>{checkpointGeneration=generation;},saveStatus);
   savedGeneration=checkpointGeneration;
-  status('Saved at '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+  saveStatus('Saved at '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
   if(exit){await disk.rpc('release');stopped=true;vm.delete();vm=null;status('Saved — clearing this computer’s personal cache…');await clearPrivateCache();location.assign('/');}
- }catch(e){status(e.message);if(e.status===409)stop(e.message);if(e.status===401){needsAuth=true;$('save').disabled=true;$('exit').disabled=true;$('reauth').hidden=false;}}
+ }catch(e){saveStatus('Not saved: '+e.message);if(e.status===409)stop(e.message);if(e.status===401){needsAuth=true;$('save').disabled=true;$('exit').disabled=true;$('reauth').hidden=false;}}
  finally{busy=false;if(!stopped){$('save').disabled=needsAuth;$('exit').disabled=needsAuth;}}
 }
 async function start(takeover=false){
- if(busy)return;busy=true;$('launch').disabled=true;$('takeover').disabled=true;
+ if(busy||vm)return;stopped=false;needsAuth=false;busy=true;saveStatus('Autosave starts after the desktop launches.');$('launch').disabled=true;$('takeover').disabled=true;
  try{
   disk=new RemoteDisk(post);status('Opening your saved desktop…');
   const manifest=await disk.claim(takeover);lastHeartbeat=Date.now();
@@ -49,9 +52,10 @@ async function start(takeover=false){
   status('Preparing your private network through HTTPS…');
   const network=await prepareNetwork(disk,(message)=>status(message));
   vm=await cx.Linux.create({networkInterface:network.interface,mounts:[{type:'ext2',path:'/',dev:overlay},{type:'devs',path:'/dev'},{type:'devpts',path:'/dev/pts'},{type:'proc',path:'/proc'},{type:'sys',path:'/sys'}]});
-  vm.registerCallback('diskActivity',state=>{if(state!=='ready'){generation++;if(!busy)status('Changes waiting to save…');}});
+  vm.registerCallback('diskActivity',state=>{if(state!=='ready'){generation++;if(!busy)saveStatus('Changes waiting to save…');}});
   const consoleOutput=$('console');
   const read=vm.setCustomConsole((buf,vt)=>{if(vt===1){consoleOutput.textContent=(consoleOutput.textContent+new TextDecoder().decode(new Uint8Array(buf))).slice(-16000);}},120,40);
+  $('logs').onclick=()=>{consoleOutput.hidden=!consoleOutput.hidden;};
   $('display').addEventListener('keydown',e=>{if(e.ctrlKey&&e.altKey&&e.key==='1'){consoleOutput.hidden=!consoleOutput.hidden;e.preventDefault();}});
   consoleOutput.addEventListener('keydown',e=>{if(e.key==='Enter')read(13);else if(e.key.length===1)read(e.key.charCodeAt(0));});
   vm.setKmsCanvas($('display'),Math.max(1024,innerWidth),Math.max(768,innerHeight-140));
@@ -61,11 +65,12 @@ async function start(takeover=false){
   $('start').hidden=true;$('display').hidden=false;$('display').focus();
   $('detail').textContent='HTTPS autosave · Private network via hk-cloud · One active computer';
   const desktop=await bootDesktop(vm,status);
-  status('IceWM started — autosave checks every 15 seconds.');
+  status('IceWM is running. The first display can take a minute to appear.');
+  $('logs').hidden=false;saveStatus('Autosave checks every 15 seconds. Use Save and exit before leaving.');
   void desktop.session.then(()=>{if(!stopped)void save(true);}).catch(e=>{if(!stopped)stop(e.message);});
   saveTimer=setInterval(()=>{if(!busy&&!needsAuth)void save();},15000);
   $('save').disabled=false;$('exit').disabled=false;
- }catch(e){status(e.message);$('message').textContent=e.message;clearInterval(heartbeatTimer);if(vm){vm.delete();vm=null;}await clearPrivateCache().catch(()=>{});if(e.status===409)$('takeover').hidden=false;else if(disk?.lease)await disk.rpc('release').catch(()=>{});}
+ }catch(e){status('Desktop could not start');$('display').hidden=true;$('console').hidden=true;$('start').hidden=false;$('message').textContent=e.message;$('launch').textContent='Retry desktop';saveStatus('Your last completed remote save is unchanged.');clearInterval(heartbeatTimer);clearInterval(saveTimer);if(vm){vm.delete();vm=null;}await clearPrivateCache().catch(()=>{});if(e.status===409)$('takeover').hidden=false;else if(disk?.lease)await disk.rpc('release').catch(()=>{});}
  finally{busy=false;$('launch').disabled=false;$('takeover').disabled=false;}
 }
 $('launch').onclick=()=>start();$('takeover').onclick=()=>start(true);$('save').onclick=()=>save();$('exit').onclick=()=>save(true);
