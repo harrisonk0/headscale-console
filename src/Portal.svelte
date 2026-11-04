@@ -1,57 +1,40 @@
 <script lang="ts">
   import SessionStart from "$lib/components/SessionStart.svelte";
-  import { House, Monitor, ArrowUpRight, LogOut } from "lucide-svelte";
-  let ready = $state(false), busy = $state(false), error = $state("");
-  async function umbrel() {
-    busy = true; error = "";
-    try {
-      const r = await fetch("/api/remote/umbrel-ticket", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const b = await r.json(); if (!r.ok) throw new Error(b.error || "Sign in again to open Umbrel.");
-      location.assign(b.url);
-    } catch (e) { error = e instanceof Error ? e.message : "Could not open Umbrel."; busy = false; }
+  import { Monitor, Laptop, ArrowUpRight, LogOut } from "lucide-svelte";
+  let ready = $state(false), error = $state("");
+  function spotlight(event: MouseEvent) {
+    const card=event.currentTarget as HTMLElement, r=card.getBoundingClientRect();
+    card.style.setProperty('--x',`${event.clientX-r.left}px`);card.style.setProperty('--y',`${event.clientY-r.top}px`);
   }
-  async function logout() {
-    busy = true;
-    try { const r = await fetch("/api/remote/logout", {method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
-      if (!r.ok) throw new Error("Could not sign out. Try again."); location.reload();
-    } catch(e) {error=e instanceof Error?e.message:"Could not sign out.";busy=false;}
-  }
+  async function logout(){try{const r=await fetch('/api/remote/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!r.ok)throw Error('Could not sign out.');location.assign('/');}catch(e){error=e instanceof Error?e.message:'Try again.';}}
 </script>
-
 {#if !ready}
   <SessionStart loginOnly forceLogin={location.hash.startsWith("#/reauth")} onReady={() => { ready = true; }} />
 {:else}
-  <div class="portal">
-    <header><a class="brand" href="/">hk<span>remote</span></a><button class="signout" onclick={logout} disabled={busy}><LogOut size={16}/> Sign out</button></header>
-    <main>
-      <p class="eyebrow">A LITTLE CLOSER TO HOME</p>
-      <h1>Your space.<br/>Anywhere.</h1>
-      <p class="intro">Everything you need, a little closer.</p>
-      <div class="choices">
-        <button class="choice" onclick={umbrel} disabled={busy}>
-          <div class="icon"><House size={30}/></div><ArrowUpRight class="arrow" size={22}/>
-          <h2>Open Umbrel</h2><p>Your home server, files and apps.<br/>Right where you left them.</p><span>Go home →</span>
-        </button>
-        <a class="choice desktop" href="/desktop/index.html">
-          <div class="icon"><Monitor size={30}/></div><ArrowUpRight class="arrow" size={22}/>
-          <h2>Launch desktop</h2><p>Your Linux desktop, running here.<br/>Files and settings that follow you.</p><span>Make yourself at home →</span>
-        </a>
-      </div>
-      {#if error}<p role="alert" class="error">{error}</p>{/if}
-      <p class="privacy">Protected by your password and one-time code.</p>
-    </main>
-    <footer><span>HK REMOTE</span><a href="/#/connect?proto=ssh" onclick={() => { location.href="/#/connect?proto=ssh"; location.reload(); }}>Connection tools</a></footer>
+<div class="home">
+ <header><a href="/" class="brand">hk<span>remote</span><i></i></a><button class="logout" onclick={logout} aria-label="Sign out" title="Sign out"><LogOut size={19}/></button></header>
+ <main>
+  <div class="eyebrow"><span></span> YOUR PERSONAL SPACE</div>
+  <h1>Pick up where<br/>you left off<span>.</span></h1>
+  <p class="intro">Two computers. One place to come back to.</p>
+  <div class="choices">
+   <a class="card linux" href="/desktop/index.html?target=linux" onmousemove={spotlight}>
+    <div class="top"><span class="number">01</span><ArrowUpRight size={23}/></div>
+    <div class="machine"><Monitor size={74} strokeWidth={1}/><div class="screen"><span></span><span></span><span></span></div></div>
+    <div class="bottom"><h2>Linux desktop</h2><p>Your own workspace.<br/>Files, apps and windows stay here.</p><span class="action">Open desktop <ArrowUpRight size={17}/></span></div>
+   </a>
+   <a class="card mac" href="/desktop/index.html?target=mac" onmousemove={spotlight}>
+    <div class="top"><span class="number">02</span><ArrowUpRight size={23}/></div>
+    <div class="machine"><Laptop size={86} strokeWidth={1}/><div class="halo"></div></div>
+    <div class="bottom"><h2>This Mac</h2><p>Your familiar Mac, from anywhere.<br/>Available when it’s awake and connected.</p><span class="action">Connect to Mac <ArrowUpRight size={17}/></span></div>
+   </a>
   </div>
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+ </main>
+ <footer><span>YOURS, WHEREVER.</span><span>Password + one-time code protected</span></footer>
+</div>
 {/if}
-
 <style>
-  :global(body){margin:0;background:#0c1513;color:#e6eee7;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
-  .portal{min-height:100dvh;display:flex;flex-direction:column;background:radial-gradient(ellipse at 85% 15%,#20362b55,transparent 60%)}
-  header,footer{display:flex;justify-content:space-between;align-items:center;padding:26px 5vw}header{border-bottom:1px solid #2b403033}
-  .brand{font-weight:800;font-size:26px;letter-spacing:-1.2px;color:#b7edcd;text-decoration:none}.brand span{color:#e6eee7;font-weight:400;margin-left:5px}
-  .signout{display:flex;align-items:center;gap:8px;color:#b4c1b8;background:none;border:1px solid #35483c;border-radius:30px;padding:10px 17px;cursor:pointer}
-  main{width:min(100%,1000px);margin:auto;padding:65px 30px 45px}.eyebrow{font-size:11px;letter-spacing:.23em;color:#9baea0;font-weight:600}h1{font-size:clamp(48px,7vw,82px);line-height:1.03;letter-spacing:-.06em;margin:22px 0;font-weight:550}.intro{color:#a7b7ab;font-size:18px}
-  .choices{display:grid;grid-template-columns:repeat(2,1fr);gap:22px;margin-top:42px}.choice{position:relative;display:block;padding:32px;border-radius:24px;border:1px solid #35503d;background:#18251e;color:inherit;text-align:left;text-decoration:none;font:inherit;cursor:pointer;transition:background .15s,transform .15s}.choice:hover{background:#21352a;transform:translateY(-3px)}.choice:disabled{opacity:.6;cursor:wait}.choice:focus-visible,.signout:focus-visible{outline:3px solid #b7edcd;outline-offset:5px}.desktop{background:#172427}.desktop:hover{background:#203235}.icon{color:#b7edcd;width:58px;height:58px;display:grid;place-items:center;background:#a2e5b716;border-radius:16px}.choice :global(.arrow){position:absolute;right:30px;top:34px;color:#8ea393}h2{font-size:27px;letter-spacing:-.03em;font-weight:550;margin:28px 0 12px}.choice p{color:#a8b6ad;line-height:1.65;font-size:15px;margin:0 0 30px}.choice span{font-size:13px;color:#c2dfc9}.privacy{color:#7f9686;font-size:12px;margin-top:27px}.error{color:#ffc0b3}footer{color:#6c8373;font-size:11px;letter-spacing:.12em}footer a{letter-spacing:0;color:#a7b7aa;text-decoration:none}
-  @media(max-width:640px){main{padding:40px 22px}.choices{grid-template-columns:1fr;gap:16px;margin-top:30px}.choice{padding:26px}.choice h2{margin-top:20px}.choice p{margin-bottom:20px}header,footer{padding:22px}}
-  @media(prefers-reduced-motion:reduce){.choice{transition:none}.choice:hover{transform:none}}
+ :global(body){margin:0;background:#08090b;color:#f0f0f2;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+ .home{min-height:100dvh;display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% 0,#191c26 0,transparent 60%)}header,footer{display:flex;align-items:center;justify-content:space-between;padding:28px 6vw}.brand{text-decoration:none;color:#f4f4f5;font-weight:750;font-size:24px;letter-spacing:-1.4px;display:flex;align-items:center}.brand span{font-weight:400;color:#989ba7;margin-left:5px}.brand i{width:5px;height:5px;background:#c8d6ff;border-radius:50%;margin-left:9px}.logout{background:#ffffff08;border:1px solid #ffffff12;border-radius:50%;padding:12px;color:#aaaeba;cursor:pointer;display:flex}main{width:min(100%,970px);padding:40px 28px 55px;margin:auto;box-sizing:border-box}.eyebrow{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.22em;color:#898e9b}.eyebrow span{width:6px;height:6px;border-radius:50%;background:#bdcaff}h1{font-size:clamp(44px,6vw,72px);font-weight:500;line-height:1.05;letter-spacing:-.06em;margin:24px 0 18px}h1>span{color:#8fa8ff}.intro{font-size:16px;color:#8a8f9e}.choices{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:40px}.card{--x:-1000px;--y:-1000px;position:relative;overflow:hidden;display:block;border:1px solid #24262e;border-radius:22px;padding:26px;color:inherit;text-decoration:none;background:#101115;transition:border-color .25s,transform .25s}.card::before{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(350px circle at var(--x) var(--y),#b0c4ff15,transparent 80%)}.card:hover{border-color:#626879;transform:translateY(-4px)}.top{display:flex;align-items:center;justify-content:space-between;color:#8a90a0}.number{font-size:11px;font-family:monospace;letter-spacing:.1em}.machine{height:135px;display:grid;place-items:center;position:relative;color:#b9c9f5}.mac .machine{color:#c8b6dd}.screen{position:absolute;width:32px;top:53px;display:grid;gap:4px}.screen span{height:2px;background:#91aaff55}.screen span:nth-child(2){width:65%}.halo{position:absolute;width:110px;height:60px;z-index:0;background:#c79eff0a;filter:blur(20px)}h2{font-size:26px;font-weight:500;letter-spacing:-.035em;margin:4px 0 12px}.bottom p{color:#9296a3;font-size:14px;line-height:1.65;margin:0}.action{display:flex;align-items:center;justify-content:space-between;margin-top:28px;padding-top:20px;border-top:1px solid #ffffff0c;font-size:13px;color:#d2daef}footer{font-size:10px;color:#5e6473;letter-spacing:.1em}.error{color:#f6a49b}a:focus-visible,button:focus-visible{outline:2px solid #a8bfff;outline-offset:5px}@media(max-width:600px){.choices{grid-template-columns:1fr}main{padding-top:25px}.machine{height:100px}.screen{top:36px}header,footer{padding:22px}footer{gap:15px;font-size:9px}.card{padding:23px}}@media(prefers-reduced-motion:reduce){.card{transition:none}.card:hover{transform:none}}
 </style>

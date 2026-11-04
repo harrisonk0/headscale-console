@@ -118,6 +118,29 @@ export default {
       if (url.pathname.startsWith("/__remote/auth/")) {
         const action = url.pathname.slice("/__remote/auth/".length),
           session = cookie(request, remoteCookie);
+        if (action === "guac/session") {
+          if (request.method !== "POST" || origin !== env.APP_ORIGIN) return json({error:"Origin not allowed."},403);
+          await auth.desktopSession(session);
+          const input=await body(request);
+          if (input.target !== "linux" && input.target !== "mac") return json({error:"Unknown desktop."},400);
+          const result=await fetch(new URL("/__hkguac-session",env.ORIGIN),{method:"POST",headers:{"Content-Type":"application/json","X-HKRemote-Bridge":env.UMBREL_BRIDGE_SECRET},body:JSON.stringify({target:input.target}),redirect:"manual",signal:AbortSignal.timeout(20000)});
+          return new Response(result.body,{status:result.status,headers});
+        }
+        if (action.startsWith("guac/proxy/")) {
+          await auth.desktopSession(session);
+          const path=action.slice("guac/proxy/".length);
+          if (!["tunnel","guacamole-common-js/all.min.js"].includes(path) || !["GET","POST"].includes(request.method)) return json({error:"Not found."},404);
+          if(request.method === "POST" && origin !== env.APP_ORIGIN) return json({error:"Origin not allowed."},403);
+          const upstream=new URL("/__hkguac/"+path,env.ORIGIN);upstream.search=url.search;
+          const h=new Headers({"X-HKRemote-Bridge":env.UMBREL_BRIDGE_SECRET});
+          if(request.headers.has("Guacamole-Tunnel-Token"))h.set("Guacamole-Tunnel-Token",request.headers.get("Guacamole-Tunnel-Token")!);
+          if(request.headers.has("Content-Type"))h.set("Content-Type",request.headers.get("Content-Type")!);
+          const result=await fetch(upstream,{method:request.method,headers:h,body:request.body,redirect:"manual"});
+          const responseHeaders=new Headers(headers);
+          for(const name of ["Content-Type","Guacamole-Status-Code","Guacamole-Error-Message","Guacamole-Tunnel-Token"])if(result.headers.has(name))responseHeaders.set(name,result.headers.get(name)!);
+          return new Response(result.body,{status:result.status,headers:responseHeaders});
+        }
+        if(action.startsWith("desktop/"))return json({error:"The browser VM has been retired. Open your persistent desktop from HK Remote."},410);
         // Public, immutable Linux distribution only. Personal disk overlays
         // remain behind desktopSession/MFA and are never served by this route.
         if (action === "desktop/base" && ["GET", "HEAD"].includes(request.method)) {

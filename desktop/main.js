@@ -1,91 +1,32 @@
-import {RemoteDisk,ENGINE,BASE,DEVICE} from './disk-store.js';
-import {configureNetwork,prepareNetwork} from './network.js';
-import {preparePrivateCache,registerPrivateCache,clearPrivateCache} from './private-cache.js';
-import {bootDesktop,environment} from './boot.js';
 const $=id=>document.getElementById(id);
-let vm=null,disk=null,busy=false,stopped=false,generation=0,savedGeneration=-1,needsAuth=false;
-let heartbeatTimer,saveTimer,lastHeartbeat=0,heartbeatBusy=false;
-const status=text=>{$('status').textContent=text;};
-const saveStatus=text=>{$('save-status').textContent=text;};
-async function post(action,data={}){
- const r=await fetch('/api/remote/desktop/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(30000)});
- const b=await r.json();if(!r.ok){const e=new Error(b.error||'Desktop storage is unavailable.');e.status=r.status;throw e;}return b;
-}
-function stop(message){$('tools').hidden=true;stopped=true;clearInterval(heartbeatTimer);clearInterval(saveTimer);vm?.delete();vm=null;$('display').hidden=true;$('start').hidden=false;$('message').textContent=message;status(message);$('save').disabled=true;$('exit').disabled=true;}
-async function heartbeat(){
- if(heartbeatBusy||stopped)return;heartbeatBusy=true;
- try{const result=await disk.rpc('resume');lastHeartbeat=Date.now();
-  if(needsAuth){needsAuth=false;$('save').disabled=busy;$('exit').disabled=busy;saveStatus('Sign-in renewed — saving can continue.');}
-  $('reauth').hidden=result.authExpires-Date.now()>120000;
- }
- catch(e){if(e.status===409)stop(e.message);else if(e.status===401){needsAuth=true;$('save').disabled=true;$('exit').disabled=true;$('reauth').hidden=false;saveStatus('Sign in again to resume saving. Changes remain on this computer.');}else{saveStatus('Connection lost — changes are not saved remotely.');}}
- finally{heartbeatBusy=false;}
-}
-async function save(exit=false){
- if(busy||!vm||stopped||needsAuth)return;
- busy=true;$('save').disabled=true;$('exit').disabled=true;saveStatus('Flushing changes to your private storage…');
+const target=new URLSearchParams(location.search).get('target')==='mac'?'mac':'linux';
+$('title').textContent=target==='mac'?'This Mac':'Linux desktop';
+let client,keyboard,connecting=false,connected=false;
+const show=(text,error=false)=>{$('status').textContent=text;$('message').textContent=text;$('notice').hidden=false;$('notice').querySelector('.loader').hidden=error;$('reconnect').hidden=!error;};
+function fit(){if(!client)return;const d=client.getDisplay();if(d.getWidth()&&d.getHeight())d.scale(Math.min(1,$('workspace').clientWidth/d.getWidth(),$('workspace').clientHeight/d.getHeight()));}
+async function loadLibrary(){if(window.Guacamole)return;await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/api/remote/guac/proxy/guacamole-common-js/all.min.js';script.onload=resolve;script.onerror=()=>reject(Error('Could not load the desktop client. Sign in again and retry.'));document.head.append(script);});}
+async function connect(){
+ if(connecting)return;connecting=true;connected=false;client?.disconnect();keyboard?.reset();show('Opening your '+(target==='mac'?'Mac':'Linux desktop')+'…');$('reconnect').hidden=true;
  try{
-  let checkpointGeneration;
-  await disk.save(vm,()=>{checkpointGeneration=generation;},saveStatus);
-  savedGeneration=checkpointGeneration;
-  saveStatus('Saved at '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
-  if(exit){await disk.rpc('release');stopped=true;vm.delete();vm=null;status('Saved — clearing this computer’s personal cache…');await clearPrivateCache();location.assign('/');}
- }catch(e){saveStatus('Not saved: '+e.message);if(e.status===409)stop(e.message);if(e.status===401){needsAuth=true;$('save').disabled=true;$('exit').disabled=true;$('reauth').hidden=false;}}
- finally{busy=false;if(!stopped){$('save').disabled=needsAuth;$('exit').disabled=needsAuth;}}
+  const response=await fetch('/api/remote/guac/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target}),credentials:'same-origin',signal:AbortSignal.timeout(25000)});
+  const data=await response.json();if(!response.ok){if(response.status===401)$('login').hidden=false;throw Error(data.error||'Could not connect.');}
+  await loadLibrary();const G=window.Guacamole;
+  // Deliberately use the official HTTP tunnel only. No WebSocket or WebVM.
+  const tunnel=new G.HTTPTunnel('/api/remote/guac/proxy/tunnel');client=new G.Client(tunnel);
+  const display=client.getDisplay();$('display').replaceChildren(display.getElement());display.onresize=fit;
+  client.onstatechange=state=>{if(state===3){connected=true;$('notice').hidden=true;$('status').textContent='Connected · Your files stay on this computer';fit();$('workspace').focus();}else if(state===5){connected=false;show('Disconnected. Your desktop stays running. Reconnect whenever you’re ready.',true);}};
+  client.onerror=error=>{connected=false;show(error.message||'The connection ended. Try reconnecting.',true);};
+  client.onrequired=parameters=>{
+   $('credentials').showModal();$('credential-form').onsubmit=event=>{event.preventDefault();for(const name of parameters){if(!['username','password'].includes(name))continue;const writer=new G.StringWriter(client.createArgumentValueStream('text/plain',name));writer.sendText($(name).value);writer.sendEnd();}$('password').value='';$('credentials').close();};
+  };
+  const mouse=new G.Mouse(display.getElement());mouse.onmousedown=mouse.onmouseup=mouse.onmousemove=state=>{if(connected)client.sendMouseState(state,true);};
+  keyboard=new G.Keyboard($('workspace'));keyboard.onkeydown=key=>{if(connected){client.sendKeyEvent(1,key);return false;}};keyboard.onkeyup=key=>{if(connected)client.sendKeyEvent(0,key);};
+  const parameters=new URLSearchParams({token:data.token,GUAC_DATA_SOURCE:'json',GUAC_ID:data.connection,GUAC_TYPE:'c',GUAC_WIDTH:String(Math.min(1920,innerWidth)),GUAC_HEIGHT:String(Math.max(600,innerHeight-90)),GUAC_DPI:'96',GUAC_TIMEZONE:Intl.DateTimeFormat().resolvedOptions().timeZone});
+  parameters.append('GUAC_IMAGE','image/png');parameters.append('GUAC_IMAGE','image/jpeg');
+  client.connect(parameters.toString());
+ }catch(error){show(error.message||'Connection failed. Please try again.',true);}finally{connecting=false;}
 }
-async function start(takeover=false){
- if(busy||vm)return;const restarting=stopped;stopped=false;needsAuth=false;busy=true;saveStatus('Autosave starts after the desktop launches.');$('launch').disabled=true;$('takeover').disabled=true;
- try{
-  if(restarting)await clearPrivateCache();
-  disk=new RemoteDisk(post);status('Opening your saved desktop…');
-  const manifest=await disk.claim(takeover);lastHeartbeat=Date.now();
-  heartbeatTimer=setInterval(heartbeat,15000);
-  await preparePrivateCache();
-  await disk.restore(manifest,(done,total)=>status(`Restoring your desktop (${done}/${total} disk records)…`));status('Loading the desktop engine…');
-  if(!crossOriginIsolated)throw new Error('This browser did not enable the isolation required by WebVM.');
-  configureNetwork(message=>status(message));
-  const cx=await import(/* @vite-ignore */ `https://cxrtnc.leaningtech.com/${ENGINE}/cx.esm.js`);
-  // An HTTPS disk source avoids the WebSocket backend entirely.
-  const base=await cx.HttpBytesDevice.create('/api/remote/desktop/base?v='+BASE);
-  const cache=await cx.IDBDevice.create(DEVICE);
-  registerPrivateCache(cache);
-  const overlay=await cx.OverlayDevice.create(base,cache);
-  status('Preparing your private network through HTTPS…');
-  const network=await prepareNetwork(disk,(message)=>status(message));
-  vm=await cx.Linux.create({networkInterface:network.interface,mounts:[{type:'ext2',path:'/',dev:overlay},{type:'devs',path:'/dev'},{type:'devpts',path:'/dev/pts'},{type:'proc',path:'/proc'},{type:'sys',path:'/sys'}]});
-  vm.registerCallback('diskActivity',state=>{if(state!=='ready'){generation++;if(!busy)saveStatus('Changes waiting to save…');}});
-  const consoleOutput=$('console');
-  const read=vm.setCustomConsole((buf,vt)=>{if(vt===1){consoleOutput.textContent=(consoleOutput.textContent+new TextDecoder().decode(new Uint8Array(buf))).slice(-16000);}},120,40);
-  $('logs').hidden=false;$('logs').onclick=()=>{consoleOutput.hidden=!consoleOutput.hidden;};
-  $('display').addEventListener('keydown',e=>{if(e.ctrlKey&&e.altKey&&e.key==='1'){consoleOutput.hidden=!consoleOutput.hidden;e.preventDefault();}});
-  consoleOutput.addEventListener('keydown',e=>{if(e.key==='Enter')read(13);else if(e.key.length===1)read(e.key.charCodeAt(0));});
-  vm.setKmsCanvas($('display'),Math.max(1024,innerWidth),Math.max(768,innerHeight-140));
-  vm.setActivateConsole(vt=>{if(vt===7){$('display').hidden=false;consoleOutput.hidden=true;}});
-  await network.connect(vm);
-  await vm.run('/bin/sh',['-c',"printf 'nameserver 100.96.0.1\\nsearch mesh.movenis.dev\\n' > /etc/resolv.conf"],{uid:0,gid:0});
-  $('start').hidden=true;$('display').hidden=false;$('display').focus();
-  $('detail').textContent='HTTPS autosave · Private network via hk-cloud · One active computer';
-  const desktop=await bootDesktop(vm,status);
-  status('Desktop ready');
-  $('tools').hidden=false;$('logs').hidden=false;saveStatus('Autosave checks every 15 seconds. Use Save and exit before leaving.');
-  void desktop.session.then(()=>{if(!stopped)void save(true);}).catch(e=>{if(!stopped)stop(e.message);});
-  saveTimer=setInterval(()=>{if(!busy&&!needsAuth)void save();},15000);
-  $('save').disabled=false;$('exit').disabled=false;
- }catch(e){if(vm){await Promise.race([vm.run('/bin/cat',['/var/log/Xorg.0.log'],{uid:0,gid:0}).catch(()=>{}),new Promise(resolve=>setTimeout(resolve,5000))]);}$('diagnostic').textContent=$('console').textContent;status('Desktop could not start');$('display').hidden=true;$('console').hidden=true;$('start').hidden=false;$('message').textContent=e.message;$('launch').textContent='Retry desktop';saveStatus('Your last completed remote save is unchanged.');clearInterval(heartbeatTimer);clearInterval(saveTimer);if(vm){vm.delete();vm=null;}await clearPrivateCache().catch(()=>{});if(e.status===409)$('takeover').hidden=false;else if(disk?.lease)await disk.rpc('release').catch(()=>{});}
- finally{busy=false;$('launch').disabled=false;$('takeover').disabled=false;}
-}
-$('launch').onclick=()=>start();$('takeover').onclick=()=>start(true);$('save').onclick=()=>save();$('exit').onclick=()=>save(true);
-addEventListener('beforeunload',e=>{if(vm&&!stopped){e.preventDefault();e.returnValue='';}});
-(async()=>{try{const r=await fetch('/api/remote/status',{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw new Error('Login service unavailable.');const s=await r.json();if(!s.authenticated){$('login').hidden=false;status('Sign in to continue');$('message').textContent='Your password and one-time code protect this desktop.';return;}$('message').textContent='Ready to restore your files, apps and settings. Your private network connects through hk-cloud using HTTPS.';$('launch').hidden=false;status('Ready');}catch(e){status(e.message);}})();
-
-async function launchApp(args){
- if(!vm||stopped)return;
- try{const result=await vm.run('/usr/bin/xterm',args,{uid:1000,gid:1000,cwd:'/home/user',env:environment});if(result.status)status('Application closed with an error. Open Startup log for details.');}
- catch(e){status('Could not open application: '+e.message);}
-}
-$('terminal').onclick=()=>launchApp(['-title','Terminal','-fa','DejaVu Sans Mono','-fs','12']);
-$('files').onclick=()=>launchApp(['-title','Files','-fa','DejaVu Sans Mono','-fs','12','-e','mc']);
-$('notes').onclick=()=>launchApp(['-title','Notes','-fa','DejaVu Sans Mono','-fs','12','-e','nano','/home/user/Notes.txt']);
-$('help').onclick=()=>$('guide').showModal();
-$('close-guide').onclick=()=>$('guide').close();
-$('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{status('Fullscreen is unavailable in this browser.');}};
+$('reconnect').onclick=connect;$('disconnect').onclick=()=>{client?.disconnect();location.assign('/');};$('cancel').onclick=()=>{$('password').value='';$('credentials').close();client?.disconnect();};
+$('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{show('Fullscreen is unavailable in this browser.',true);}};
+addEventListener('resize',fit);addEventListener('blur',()=>keyboard?.reset());addEventListener('pagehide',()=>client?.disconnect());
+void connect();
