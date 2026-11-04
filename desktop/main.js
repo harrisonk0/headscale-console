@@ -4,7 +4,7 @@ $('title').textContent=target==='mac'?'This Mac':'Linux desktop';
 let client,keyboard,connecting=false,connected=false;
 const show=(text,error=false)=>{$('status').textContent=text;$('message').textContent=text;$('notice').hidden=false;$('notice').querySelector('.loader').hidden=error;$('reconnect').hidden=!error;};
 function fit(){if(!client)return;const d=client.getDisplay();if(d.getWidth()&&d.getHeight())d.scale(Math.min(1,$('workspace').clientWidth/d.getWidth(),$('workspace').clientHeight/d.getHeight()));}
-async function loadLibrary(){if(window.Guacamole)return;await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/api/remote/guac/proxy/guacamole-common-js/all.min.js';script.onload=resolve;script.onerror=()=>reject(Error('Could not load the desktop client. Sign in again and retry.'));document.head.append(script);});}
+async function loadLibrary(){if(window.Guacamole)return;await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/vendor/remote-client-1.6.js';script.onload=resolve;script.onerror=()=>reject(Error('The desktop client download failed. Refresh this page to retry.'));document.head.append(script);});}
 async function connect(){
  if(connecting)return;connecting=true;connected=false;client?.disconnect();keyboard?.reset();show('Opening your '+(target==='mac'?'Mac':'Linux desktop')+'…');$('reconnect').hidden=true;
  try{
