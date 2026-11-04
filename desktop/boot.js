@@ -1,4 +1,4 @@
-const environment=[
+export const environment=[
   'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
   'DISPLAY=:0','HOME=/home/user','USER=user','LOGNAME=user','SHELL=/bin/bash',
   'XDG_RUNTIME_DIR=/tmp/hk-runtime-user','XDG_SESSION_TYPE=x11','XDG_CURRENT_DESKTOP=IceWM',

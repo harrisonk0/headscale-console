@@ -1,7 +1,7 @@
 import {RemoteDisk,ENGINE,BASE,DEVICE} from './disk-store.js';
 import {configureNetwork,prepareNetwork} from './network.js';
 import {preparePrivateCache,registerPrivateCache,clearPrivateCache} from './private-cache.js';
-import {bootDesktop} from './boot.js';
+import {bootDesktop,environment} from './boot.js';
 const $=id=>document.getElementById(id);
 let vm=null,disk=null,busy=false,stopped=false,generation=0,savedGeneration=-1,needsAuth=false;
 let heartbeatTimer,saveTimer,lastHeartbeat=0,heartbeatBusy=false;
@@ -11,7 +11,7 @@ async function post(action,data={}){
  const r=await fetch('/api/remote/desktop/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(30000)});
  const b=await r.json();if(!r.ok){const e=new Error(b.error||'Desktop storage is unavailable.');e.status=r.status;throw e;}return b;
 }
-function stop(message){stopped=true;clearInterval(heartbeatTimer);clearInterval(saveTimer);vm?.delete();vm=null;$('display').hidden=true;$('start').hidden=false;$('message').textContent=message;status(message);$('save').disabled=true;$('exit').disabled=true;}
+function stop(message){$('tools').hidden=true;stopped=true;clearInterval(heartbeatTimer);clearInterval(saveTimer);vm?.delete();vm=null;$('display').hidden=true;$('start').hidden=false;$('message').textContent=message;status(message);$('save').disabled=true;$('exit').disabled=true;}
 async function heartbeat(){
  if(heartbeatBusy||stopped)return;heartbeatBusy=true;
  try{const result=await disk.rpc('resume');lastHeartbeat=Date.now();
@@ -34,8 +34,9 @@ async function save(exit=false){
  finally{busy=false;if(!stopped){$('save').disabled=needsAuth;$('exit').disabled=needsAuth;}}
 }
 async function start(takeover=false){
- if(busy||vm)return;stopped=false;needsAuth=false;busy=true;saveStatus('Autosave starts after the desktop launches.');$('launch').disabled=true;$('takeover').disabled=true;
+ if(busy||vm)return;const restarting=stopped;stopped=false;needsAuth=false;busy=true;saveStatus('Autosave starts after the desktop launches.');$('launch').disabled=true;$('takeover').disabled=true;
  try{
+  if(restarting)await clearPrivateCache();
   disk=new RemoteDisk(post);status('Opening your saved desktop…');
   const manifest=await disk.claim(takeover);lastHeartbeat=Date.now();
   heartbeatTimer=setInterval(heartbeat,15000);
@@ -66,7 +67,7 @@ async function start(takeover=false){
   $('detail').textContent='HTTPS autosave · Private network via hk-cloud · One active computer';
   const desktop=await bootDesktop(vm,status);
   status('IceWM is running. The first display can take a minute to appear.');
-  $('logs').hidden=false;saveStatus('Autosave checks every 15 seconds. Use Save and exit before leaving.');
+  $('tools').hidden=false;$('logs').hidden=false;saveStatus('Autosave checks every 15 seconds. Use Save and exit before leaving.');
   void desktop.session.then(()=>{if(!stopped)void save(true);}).catch(e=>{if(!stopped)stop(e.message);});
   saveTimer=setInterval(()=>{if(!busy&&!needsAuth)void save();},15000);
   $('save').disabled=false;$('exit').disabled=false;
@@ -76,3 +77,15 @@ async function start(takeover=false){
 $('launch').onclick=()=>start();$('takeover').onclick=()=>start(true);$('save').onclick=()=>save();$('exit').onclick=()=>save(true);
 addEventListener('beforeunload',e=>{if(vm&&!stopped){e.preventDefault();e.returnValue='';}});
 (async()=>{try{const r=await fetch('/api/remote/status',{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw new Error('Login service unavailable.');const s=await r.json();if(!s.authenticated){$('login').hidden=false;status('Sign in to continue');$('message').textContent='Your password and one-time code protect this desktop.';return;}$('message').textContent='Ready to restore your files, apps and settings. Your private network connects through hk-cloud using HTTPS.';$('launch').hidden=false;status('Ready');}catch(e){status(e.message);}})();
+
+async function launchApp(args){
+ if(!vm||stopped)return;
+ try{const result=await vm.run('/usr/bin/xterm',args,{uid:1000,gid:1000,cwd:'/home/user',env:environment});if(result.status)status('Application closed with an error. Open Startup log for details.');}
+ catch(e){status('Could not open application: '+e.message);}
+}
+$('terminal').onclick=()=>launchApp(['-title','Terminal','-fa','DejaVu Sans Mono','-fs','12']);
+$('files').onclick=()=>launchApp(['-title','Files','-fa','DejaVu Sans Mono','-fs','12','-e','mc']);
+$('notes').onclick=()=>launchApp(['-title','Notes','-fa','DejaVu Sans Mono','-fs','12','-e','nano','/home/user/Notes.txt']);
+$('help').onclick=()=>$('guide').showModal();
+$('close-guide').onclick=()=>$('guide').close();
+$('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{status('Fullscreen is unavailable in this browser.');}};
