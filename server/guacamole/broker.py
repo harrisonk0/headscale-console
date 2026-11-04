@@ -15,9 +15,13 @@ class Handler(BaseHTTPRequestHandler):
    if target not in ('linux','mac'):raise ValueError('Unknown desktop')
    host,port=('127.0.0.1',5991) if target=='linux' else ('100.64.0.1',5900)
    with socket.create_connection((host,port),timeout=4):pass
-   params={'hostname':host,'port':str(port),'color-depth':'24','cursor':'remote','clipboard-encoding':'UTF-8','enable-audio':'false'}
+   params={'hostname':host,'port':str(port),'color-depth':'16' if target=='linux' else '24','cursor':'local','clipboard-encoding':'UTF-8','enable-audio':'false'}
    if target=='linux':params['password']=secrets['vnc']
-   else:params['username']='harrisonk'
+   else:
+    username=b.get('username','harrisonk');password=b.get('password','')
+    if not isinstance(username,str) or not isinstance(password,str) or len(username)>256 or len(password)>1024:raise ValueError('Invalid credentials')
+    params['username']=username
+    if password:params['password']=password
    name='Linux desktop' if target=='linux' else 'This Mac'
    data=json.dumps({'username':'harrison','expires':int(time.time()*1000)+60000,'connections':{name:{'protocol':'vnc','parameters':params}}}).encode()
    key=bytes.fromhex(secrets['key']);signed=hmac.new(key,data,hashlib.sha256).digest()+data

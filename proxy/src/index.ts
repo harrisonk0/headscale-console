@@ -124,7 +124,7 @@ export default {
           await auth.desktopSession(session);
           const input=await body(request);
           if (input.target !== "linux" && input.target !== "mac") return json({error:"Unknown desktop."},400);
-          const result=await fetch(new URL("/__hkguac-session",env.ORIGIN),{method:"POST",headers:{"Content-Type":"application/json","X-HKRemote-Bridge":env.UMBREL_BRIDGE_SECRET},body:JSON.stringify({target:input.target}),redirect:"manual",signal:AbortSignal.timeout(20000)});
+          const result=await fetch(new URL("/__hkguac-session",env.ORIGIN),{method:"POST",headers:{"Content-Type":"application/json","X-HKRemote-Bridge":env.UMBREL_BRIDGE_SECRET},body:JSON.stringify({target:input.target,...(input.target==="mac" ? {username:text(input.username),password:text(input.password)} : {})}),redirect:"manual",signal:AbortSignal.timeout(20000)});
           return new Response(result.body,{status:result.status,headers});
         }
         if (action.startsWith("guac/proxy/")) {
